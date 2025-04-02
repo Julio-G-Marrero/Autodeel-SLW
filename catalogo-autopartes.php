@@ -210,10 +210,10 @@ function crear_producto_autoparte() {
         wp_send_json_error(['message' => 'No se pudo crear el producto.']);
     }
 
-    // Generar SKU extendido (base + post_id)
+    // Generar SKU extendido
     $sku_extendido = $sku_base . '#P' . $post_id;
 
-    // Precio, SKU e inventario
+    // Precio, inventario, SKU
     update_post_meta($post_id, '_sku', $sku_extendido);
     update_post_meta($post_id, '_regular_price', $precio);
     update_post_meta($post_id, '_price', $precio);
@@ -230,25 +230,26 @@ function crear_producto_autoparte() {
     update_post_meta($post_id, '_ubicacion_fisica', $ubicacion);
     update_post_meta($post_id, '_observaciones', $observaciones);
 
-    // Subir imágenes
+    // Subir imágenes desde base64
     require_once(ABSPATH . 'wp-admin/includes/image.php');
     require_once(ABSPATH . 'wp-admin/includes/file.php');
     require_once(ABSPATH . 'wp-admin/includes/media.php');
 
     $galeria_ids = [];
+
     foreach ($imagenes as $index => $img_base64) {
         if (preg_match('/^data:image\/(\w+);base64,/', $img_base64, $type)) {
             $img_base64 = substr($img_base64, strpos($img_base64, ',') + 1);
             $img_base64 = base64_decode($img_base64);
-    
+
             if ($img_base64 === false) continue;
-    
+
             $ext = strtolower($type[1]); // jpg, png, etc.
             $filename = 'autoparte_' . time() . '_' . $index . '.' . $ext;
-    
+
             $upload_file = wp_upload_bits($filename, null, $img_base64);
             if (!$upload_file['success']) continue;
-    
+
             $wp_filetype = wp_check_filetype($filename, null);
             $attachment = [
                 'post_mime_type' => $wp_filetype['type'],
@@ -256,13 +257,12 @@ function crear_producto_autoparte() {
                 'post_content'   => '',
                 'post_status'    => 'inherit'
             ];
-    
+
             $attachment_id = wp_insert_attachment($attachment, $upload_file['file'], $post_id);
             if (!is_wp_error($attachment_id)) {
-                require_once(ABSPATH . 'wp-admin/includes/image.php');
                 $attach_data = wp_generate_attachment_metadata($attachment_id, $upload_file['file']);
                 wp_update_attachment_metadata($attachment_id, $attach_data);
-    
+
                 if ($index === 0) {
                     set_post_thumbnail($post_id, $attachment_id);
                 } else {
@@ -271,11 +271,12 @@ function crear_producto_autoparte() {
             }
         }
     }
+
     if (!empty($galeria_ids)) {
         update_post_meta($post_id, '_product_image_gallery', implode(',', $galeria_ids));
     }
 
-    // Compatibilidades como taxonomía pa_compat_autopartes
+    // Compatibilidades como taxonomía personalizada
     $attribute_slug = 'compat_autopartes';
     $taxonomy = 'pa_' . $attribute_slug;
     $terminos = [];
@@ -316,7 +317,7 @@ function crear_producto_autoparte() {
 
     update_post_meta($post_id, '_product_attributes', $product_attributes);
 
-    // Relación con la solicitud
+    // Relacionar solicitud
     update_post_meta($post_id, 'solicitud_id', $solicitud_id);
 
     global $wpdb;
