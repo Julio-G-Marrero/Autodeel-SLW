@@ -156,7 +156,7 @@ function generarEtiquetas() {
          etiquetasFinal.push(null); // Etiqueta en blanco
     }
     etiquetasFinal.push(...etiquetas);
-
+    console.log(etiquetasFinal)
     const win = window.open('', '_blank');
     win.document.write(`
         <html>
@@ -187,7 +187,7 @@ function generarEtiquetas() {
                     padding: 0.1in;
                     display: flex;
                     align-items: center;
-                    gap: 0.7in;
+                    gap: 0.75in;
                     page-break-inside: avoid;
                 }
                 .etiqueta img {
