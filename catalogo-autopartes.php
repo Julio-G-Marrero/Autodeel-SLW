@@ -180,6 +180,41 @@ add_action('admin_enqueue_scripts', 'mi_plugin_cargar_tailwind_cdn');
 
 add_action('wp_ajax_crear_producto_autoparte', 'crear_producto_autoparte');
 
+function guardar_imagen_base64($img_base64, $index, $post_id) {
+    if (preg_match('/^data:image\/(\w+);base64,/', $img_base64, $type)) {
+        $img_base64 = substr($img_base64, strpos($img_base64, ',') + 1);
+        $img_base64 = base64_decode($img_base64);
+
+        if ($img_base64 === false) return false;
+
+        $ext = strtolower($type[1]); // jpg, png
+        if (!in_array($ext, ['jpg', 'jpeg', 'png'])) return false;
+
+        $filename = 'autoparte_' . time() . '_' . $index . '.' . $ext;
+
+        $upload_file = wp_upload_bits($filename, null, $img_base64);
+        if (!$upload_file['success']) return false;
+
+        $wp_filetype = wp_check_filetype($filename, null);
+        $attachment = [
+            'post_mime_type' => $wp_filetype['type'],
+            'post_title'     => sanitize_file_name($filename),
+            'post_content'   => '',
+            'post_status'    => 'inherit'
+        ];
+
+        $attachment_id = wp_insert_attachment($attachment, $upload_file['file'], $post_id);
+        if (is_wp_error($attachment_id)) return false;
+
+        require_once(ABSPATH . 'wp-admin/includes/image.php');
+        $attach_data = wp_generate_attachment_metadata($attachment_id, $upload_file['file']);
+        wp_update_attachment_metadata($attachment_id, $attach_data);
+
+        return $attachment_id;
+    }
+    return false;
+}
+
 function crear_producto_autoparte() {
     if (!current_user_can('manage_woocommerce')) {
         wp_send_json_error(['message' => 'Permisos insuficientes.']);
@@ -238,44 +273,24 @@ function crear_producto_autoparte() {
     $galeria_ids = [];
 
     foreach ($imagenes as $index => $img_base64) {
-        if (preg_match('/^data:image\/(\w+);base64,/', $img_base64, $type)) {
-            $img_base64 = substr($img_base64, strpos($img_base64, ',') + 1);
-            $img_base64 = base64_decode($img_base64);
-
-            if ($img_base64 === false) continue;
-
-            $ext = strtolower($type[1]); // jpg, png, etc.
-            $filename = 'autoparte_' . time() . '_' . $index . '.' . $ext;
-
-            $upload_file = wp_upload_bits($filename, null, $img_base64);
-            if (!$upload_file['success']) continue;
-
-            $wp_filetype = wp_check_filetype($filename, null);
-            $attachment = [
-                'post_mime_type' => $wp_filetype['type'],
-                'post_title'     => sanitize_file_name($filename),
-                'post_content'   => '',
-                'post_status'    => 'inherit'
-            ];
-
-            $attachment_id = wp_insert_attachment($attachment, $upload_file['file'], $post_id);
-            if (!is_wp_error($attachment_id)) {
-                $attach_data = wp_generate_attachment_metadata($attachment_id, $upload_file['file']);
-                wp_update_attachment_metadata($attachment_id, $attach_data);
-
-                if ($index === 0) {
-                    set_post_thumbnail($post_id, $attachment_id);
-                } else {
-                    $galeria_ids[] = $attachment_id;
-                }
+        try {
+            $attachment_id = guardar_imagen_base64($img_base64, $index, $post_id);
+            if (!$attachment_id) continue;
+    
+            if ($index === 0) {
+                set_post_thumbnail($post_id, $attachment_id);
+            } else {
+                $galeria_ids[] = $attachment_id;
             }
+        } catch (Exception $e) {
+            error_log("Error al guardar imagen base64 en producto $post_id: " . $e->getMessage());
         }
     }
-
+    
     if (!empty($galeria_ids)) {
         update_post_meta($post_id, '_product_image_gallery', implode(',', $galeria_ids));
     }
-
+    
     // Compatibilidades como taxonomía personalizada
     $attribute_slug = 'compat_autopartes';
     $taxonomy = 'pa_' . $attribute_slug;
