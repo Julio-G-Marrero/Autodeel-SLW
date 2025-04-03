@@ -198,7 +198,7 @@ function crear_producto_autoparte() {
     if (!is_array($imagenes)) $imagenes = [];
     if (!is_array($compatibilidades)) $compatibilidades = [];
 
-    // Crear producto (sin SKU aún)
+    // Crear producto
     $post_id = wp_insert_post([
         'post_title'   => $nombre,
         'post_content' => 'Producto creado desde solicitud de autoparte.',
@@ -210,10 +210,8 @@ function crear_producto_autoparte() {
         wp_send_json_error(['message' => 'No se pudo crear el producto.']);
     }
 
-    // Generar SKU extendido (base + post_id)
     $sku_extendido = $sku_base . '#P' . $post_id;
 
-    // Precio, inventario, SKU
     update_post_meta($post_id, '_sku', $sku_extendido);
     update_post_meta($post_id, '_regular_price', $precio);
     update_post_meta($post_id, '_price', $precio);
@@ -221,79 +219,94 @@ function crear_producto_autoparte() {
     update_post_meta($post_id, '_stock', 1);
     update_post_meta($post_id, '_stock_status', 'instock');
 
-    // Categoría
     if ($categoria_id) {
         wp_set_object_terms($post_id, [$categoria_id], 'product_cat');
     }
 
-    // Ubicación y observaciones
     update_post_meta($post_id, '_ubicacion_fisica', $ubicacion);
     update_post_meta($post_id, '_observaciones', $observaciones);
 
-    // Incluir funciones necesarias para manejar imágenes
+    // Imágenes
     require_once(ABSPATH . 'wp-admin/includes/image.php');
     require_once(ABSPATH . 'wp-admin/includes/file.php');
     require_once(ABSPATH . 'wp-admin/includes/media.php');
 
     $galeria_ids = [];
 
-    // Función auxiliar para guardar imágenes en base64
-    function guardar_imagen_base64($img_base64, $index, $post_id) {
-        if (preg_match('/^data:image\/(\w+);base64,/', $img_base64, $type)) {
-            $img_base64 = substr($img_base64, strpos($img_base64, ',') + 1);
-            $img_base64 = base64_decode($img_base64);
-            if ($img_base64 === false) {
-                return false;
+    error_log("===== INICIO DE IMÁGENES PRODUCTO $post_id =====");
+    error_log("Total imágenes recibidas: " . count($imagenes));
+
+    foreach ($imagenes as $index => $img_data) {
+        $img_data = trim($img_data);
+        error_log("Imagen [$index] inicio: " . substr($img_data, 0, 40));
+        $attachment_id = false;
+
+        // Base64
+        if (preg_match('/^data:image\/(jpeg|png|jpg);base64,/', $img_data, $type)) {
+            $img_data = substr($img_data, strpos($img_data, ',') + 1);
+            $decoded = base64_decode($img_data);
+
+            if ($decoded === false) {
+                error_log("Error al decodificar base64 en imagen [$index]");
+                continue;
             }
-            $ext = strtolower($type[1]); // jpg, png, etc.
-            if (!in_array($ext, ['jpg', 'jpeg', 'png'])) {
-                return false;
-            }
+
+            $ext = $type[1];
             $filename = 'autoparte_' . time() . '_' . $index . '.' . $ext;
-            $upload_file = wp_upload_bits($filename, null, $img_base64);
-            if (!$upload_file['success']) {
-                return false;
+            $upload = wp_upload_bits($filename, null, $decoded);
+
+            if ($upload['error']) {
+                error_log("Fallo en wp_upload_bits [$filename]: " . $upload['error']);
+                continue;
             }
-            $wp_filetype = wp_check_filetype($filename, null);
+
+            $file_path = $upload['file'];
+            $filetype = wp_check_filetype($filename, null);
+
             $attachment = [
-                'post_mime_type' => $wp_filetype['type'],
+                'post_mime_type' => $filetype['type'],
                 'post_title'     => sanitize_file_name($filename),
                 'post_content'   => '',
                 'post_status'    => 'inherit'
             ];
-            $attachment_id = wp_insert_attachment($attachment, $upload_file['file'], $post_id);
+
+            $attachment_id = wp_insert_attachment($attachment, $file_path, $post_id);
             if (is_wp_error($attachment_id)) {
-                return false;
+                error_log("Fallo en wp_insert_attachment: " . $attachment_id->get_error_message());
+                continue;
             }
-            $attach_data = wp_generate_attachment_metadata($attachment_id, $upload_file['file']);
+
+            $attach_data = wp_generate_attachment_metadata($attachment_id, $file_path);
             wp_update_attachment_metadata($attachment_id, $attach_data);
-            return $attachment_id;
-        }
-        return false;
-    }
 
-    // Procesar cada imagen: puede ser base64 o una URL
-    foreach ($imagenes as $index => $img_data) {
-        $attachment_id = false;
-        // Si la imagen es base64
-        if (stripos($img_data, 'data:image') === 0) {
-            $attachment_id = guardar_imagen_base64($img_data, $index, $post_id);
+            error_log("Imagen base64 [$index] guardada, ID: $attachment_id");
+
         } else {
-            // Se asume que es una URL válida
+            // URL
             $tmp = download_url($img_data);
-            if (!is_wp_error($tmp)) {
-                $file_array = [
-                    'name'     => basename($img_data),
-                    'tmp_name' => $tmp,
-                ];
-                $attachment_id = media_handle_sideload($file_array, $post_id);
+            if (is_wp_error($tmp)) {
+                error_log("Error al descargar imagen URL [$index]: " . $tmp->get_error_message());
+                continue;
             }
+
+            $file_array = [
+                'name'     => basename($img_data),
+                'tmp_name' => $tmp,
+            ];
+
+            $attachment_id = media_handle_sideload($file_array, $post_id);
+            if (is_wp_error($attachment_id)) {
+                error_log("media_handle_sideload falló: " . $attachment_id->get_error_message());
+                continue;
+            }
+
+            error_log("Imagen URL [$index] subida, ID: $attachment_id");
         }
 
-        // Si se obtuvo el attachment, asignarlo al producto
-        if (!is_wp_error($attachment_id) && $attachment_id) {
+        if ($attachment_id) {
             if ($index === 0) {
                 set_post_thumbnail($post_id, $attachment_id);
+                error_log("Asignada como imagen destacada: $attachment_id");
             } else {
                 $galeria_ids[] = $attachment_id;
             }
@@ -302,9 +315,12 @@ function crear_producto_autoparte() {
 
     if (!empty($galeria_ids)) {
         update_post_meta($post_id, '_product_image_gallery', implode(',', $galeria_ids));
+        error_log("Galería asignada: " . implode(',', $galeria_ids));
     }
 
-    // Procesar compatibilidades como taxonomía personalizada
+    error_log("===== FIN DE IMÁGENES PRODUCTO $post_id =====");
+
+    // Compatibilidades
     $attribute_slug = 'compat_autopartes';
     $taxonomy = 'pa_' . $attribute_slug;
     $terminos = [];
@@ -345,17 +361,17 @@ function crear_producto_autoparte() {
 
     update_post_meta($post_id, '_product_attributes', $product_attributes);
 
-    // Relacionar la solicitud
+    // Relación con solicitud
     update_post_meta($post_id, 'solicitud_id', $solicitud_id);
 
     global $wpdb;
     $wpdb->update("{$wpdb->prefix}solicitudes_piezas", ['estado' => 'aprobada'], ['id' => $solicitud_id]);
 
-    // Guardar producto
+    // Guardar
     $product = wc_get_product($post_id);
     $product->save();
 
-    $terminos_asignados = wp_get_object_terms($post_id, 'pa_compat_autopartes', ['fields' => 'names']);
+    $terminos_asignados = wp_get_object_terms($post_id, $taxonomy, ['fields' => 'names']);
 
     wp_send_json_success([
         'message' => 'Producto creado correctamente.',
