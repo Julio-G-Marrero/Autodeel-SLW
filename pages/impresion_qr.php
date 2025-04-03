@@ -5,14 +5,21 @@ include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
 global $wpdb;
 
 $solicitudes_aprobadas = $wpdb->get_results("
-    SELECT s.id AS solicitud_id, s.autoparte_id, a.codigo, a.descripcion, p.ID AS producto_id
+    SELECT 
+        s.id AS solicitud_id,
+        s.autoparte_id,
+        a.codigo,
+        a.descripcion,
+        MAX(p.ID) AS producto_id
     FROM {$wpdb->prefix}solicitudes_piezas s
     INNER JOIN {$wpdb->prefix}autopartes a ON s.autoparte_id = a.id
     LEFT JOIN {$wpdb->postmeta} pm ON pm.meta_key = 'solicitud_id' AND pm.meta_value = s.id
     LEFT JOIN {$wpdb->posts} p ON p.ID = pm.post_id AND p.post_type = 'product'
     WHERE s.estado = 'aprobada'
+    GROUP BY s.id
     ORDER BY s.fecha_envio DESC
 ");
+
 ?>
 
 <div class="wrap">
@@ -137,10 +144,12 @@ function generarEtiquetas() {
             }
             // Debido a la nueva columna, el ID se encuentra en children[1], SKU en children[3] y la imagen QR en children[5]
             const solicitudID = fila.children[1].innerText.trim();
+            const descripcion = fila.children[2]?.innerText.trim(); // CORREGIDO
             const sku = fila.children[3].innerText.trim();
             const qrImg = fila.children[5].querySelector('img')?.src;
+
             if (sku && qrImg) {
-                etiquetas.push({ solicitudID, sku, qrImg });
+                etiquetas.push({ solicitudID, sku, descripcion, qrImg });
             }
         }
     });
@@ -165,84 +174,82 @@ function generarEtiquetas() {
             <style>
                 @page {
                     size: 8.5in 11in;
-                    margin: 0.5in;
+                    margin: 0.5in 0.25in;
                 }
                 body {
-                    font-family: Arial, sans-serif;
                     margin: 0;
                     padding: 0;
+                    font-family: Arial, sans-serif;
                 }
                 .contenedor {
                     display: grid;
-                    grid-template-columns: repeat(2, 3.94in);
+                    grid-template-columns: repeat(2, 4in);
                     grid-auto-rows: 2in;
-                    gap: 0.125in;
-                    margin: 0 auto;
-                    padding: 0;
+                    gap: 0in;
+                    width: 100%;
                 }
                 .etiqueta {
-                    width: 3.94in;
+                    width: 4in;
                     height: 2in;
                     box-sizing: border-box;
-                    padding: 0.1in;
+                    padding: 0.2in;
                     display: flex;
                     align-items: center;
-                    gap: 0.75in;
+                    justify-content: flex-start;
                     page-break-inside: avoid;
                 }
                 .etiqueta img {
                     width: 1.5in;
                     height: 1.5in;
                     object-fit: contain;
+                    margin-right: 0.3in;
                 }
                 .info {
+                    flex: 1;
+                    font-size: 10pt;
                     display: flex;
                     flex-direction: column;
-                    font-size: 12pt;
                     justify-content: center;
                 }
-                .info-label {
-                    font-weight: bold;
+                .info p {
+                    margin: 0 0 4px;
+                    line-height: 1.2;
+                    font-size: 9.5pt;
                 }
-                @media print {
-                    .etiqueta {
-                        page-break-inside: avoid;
-                        break-inside: avoid;
-                    }
+                .descripcion {
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                 }
             </style>
         </head>
         <body>
             <div class="contenedor">
                 ${etiquetasFinal.map(et => {
-                    if (et === null) {
-                        // Espacio en blanco para posición sin imprimir
-                        return '<div class="etiqueta"></div>';
-                    }
+                    if (!et) return '<div class="etiqueta"></div>';
                     return `
-                        <div class="etiqueta">
-                            <img src="${et.qrImg}" alt="QR">
-                            <div class="info">
-                                <div class="info-label">SKU:</div>
-                                <div>${et.sku}</div>
-                                <div class="info-label">Solicitud:</div>
-                                <div>${et.solicitudID}</div>
-                            </div>
+                    <div class="etiqueta">
+                        <img src="${et.qrImg}" alt="QR">
+                        <div class="info">
+                            <p><strong>SKU:</strong><br>${et.sku}</p>
+                            <p><strong>Solicitud:</strong><br>${et.solicitudID}</p>
+                            <p class="descripcion"><strong>Descripción:</strong><br>${et.descripcion}</p>
                         </div>
-                    `;
+                    </div>`;
                 }).join('')}
             </div>
             <script>
                 window.onload = function() {
                     window.print();
-                    window.onafterprint = function() {
-                        window.close();
-                    };
+                    window.onafterprint = () => window.close();
                 };
             <\/script>
         </body>
         </html>
-    `);
+        `);
+
     win.document.close();
 }
 
