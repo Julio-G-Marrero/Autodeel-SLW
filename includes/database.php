@@ -4,7 +4,20 @@ if (!defined('ABSPATH')) {
 }
 
 global $wpdb;
+global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios;
 $charset_collate = $wpdb->get_charset_collate();
+
+// Tabla de Precios por Catálogo (RADEC, etc.)
+$sql_precios = "CREATE TABLE {$wpdb->prefix}precios_catalogos (
+    id INT NOT NULL AUTO_INCREMENT,
+    sku_base VARCHAR(100) NOT NULL,
+    precio_proveedor DECIMAL(10,2) DEFAULT NULL,
+    precio_publico DECIMAL(10,2) DEFAULT NULL,
+    catalogo VARCHAR(100) NOT NULL,
+    fecha_subida DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY sku_catalogo (sku_base, catalogo)
+) $charset_collate;";
 
 // Tabla de Catálogos de Refaccionarias
 $sql_catalogos = "CREATE TABLE {$wpdb->prefix}catalogos_refaccionarias (
@@ -73,13 +86,14 @@ function catalogo_autopartes_crear_tablas() {
     global $wpdb;
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
-    global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes;
+    global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios;
 
     dbDelta($sql_catalogos);
     dbDelta($sql_autopartes);
     dbDelta($sql_compatibilidades);
     dbDelta($sql_ubicaciones);
     dbDelta($sql_solicitudes);
+    dbDelta($sql_precios);
 }
 
 // Función para eliminar las tablas cuando se desinstala el plugin
@@ -90,6 +104,7 @@ function catalogo_autopartes_eliminar_tablas() {
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "compatibilidades");
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "autopartes");
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "catalogos_refaccionarias");
+    $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "precios_catalogos");
 }
 
 // Función para buscar coincidencias en los catálogos

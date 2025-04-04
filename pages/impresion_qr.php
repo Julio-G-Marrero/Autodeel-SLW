@@ -129,22 +129,18 @@ function generarEtiquetas() {
     const filas = document.querySelectorAll('#tablaSolicitudesQR tbody tr');
     const etiquetas = [];
 
-    // Obtener configuración de impresión
     const modoImpresion = document.querySelector('input[name="modoImpresion"]:checked').value;
     const posicionInicial = parseInt(document.getElementById('posicionInicial').value) || 1;
 
     filas.forEach(fila => {
         if (fila.style.display !== 'none') {
-            // Si se seleccionó "imprimir seleccionadas", verificar el checkbox de la fila
             if (modoImpresion === 'seleccionadas') {
                 const checkbox = fila.querySelector('.filaCheckbox');
-                if (!checkbox || !checkbox.checked) {
-                    return; // Saltar fila no seleccionada
-                }
+                if (!checkbox || !checkbox.checked) return;
             }
-            // Debido a la nueva columna, el ID se encuentra en children[1], SKU en children[3] y la imagen QR en children[5]
+
             const solicitudID = fila.children[1].innerText.trim();
-            const descripcion = fila.children[2]?.innerText.trim(); // CORREGIDO
+            const descripcion = fila.children[2]?.innerText.trim();
             const sku = fila.children[3].innerText.trim();
             const qrImg = fila.children[5].querySelector('img')?.src;
 
@@ -159,13 +155,12 @@ function generarEtiquetas() {
         return;
     }
 
-    // Agregar etiquetas en blanco según la posición inicial (para saltar celdas ya usadas)
     const etiquetasFinal = [];
     for (let i = 1; i < posicionInicial; i++) {
-         etiquetasFinal.push(null); // Etiqueta en blanco
+        etiquetasFinal.push(null);
     }
     etiquetasFinal.push(...etiquetas);
-    console.log(etiquetasFinal)
+
     const win = window.open('', '_blank');
     win.document.write(`
         <html>
@@ -177,9 +172,9 @@ function generarEtiquetas() {
                     margin: 0.5in 0.25in;
                 }
                 body {
+                    font-family: Arial, sans-serif;
                     margin: 0;
                     padding: 0;
-                    font-family: Arial, sans-serif;
                 }
                 .contenedor {
                     display: grid;
@@ -194,22 +189,22 @@ function generarEtiquetas() {
                     box-sizing: border-box;
                     padding: 0.2in;
                     display: flex;
-                    align-items: center;
+                    align-items: flex-start;
                     justify-content: flex-start;
                     page-break-inside: avoid;
+                    gap: 0.3in;
                 }
                 .etiqueta img {
                     width: 1.5in;
                     height: 1.5in;
                     object-fit: contain;
-                    margin-right: 0.3in;
                 }
                 .info {
                     flex: 1;
                     font-size: 10pt;
                     display: flex;
                     flex-direction: column;
-                    justify-content: center;
+                    justify-content: flex-start;
                 }
                 .info p {
                     margin: 0 0 4px;
@@ -222,6 +217,10 @@ function generarEtiquetas() {
                     -webkit-box-orient: vertical;
                     overflow: hidden;
                     text-overflow: ellipsis;
+                    line-height: 1.2;
+                    max-height: 2.6em;
+                    font-size: 9.5pt;
+                    word-break: break-word;
                 }
             </style>
         </head>
@@ -230,14 +229,14 @@ function generarEtiquetas() {
                 ${etiquetasFinal.map(et => {
                     if (!et) return '<div class="etiqueta"></div>';
                     return `
-                    <div class="etiqueta">
-                        <img src="${et.qrImg}" alt="QR">
-                        <div class="info">
-                            <p><strong>SKU:</strong><br>${et.sku}</p>
-                            <p><strong>Solicitud:</strong><br>${et.solicitudID}</p>
-                            <p class="descripcion"><strong>Descripción:</strong><br>${et.descripcion}</p>
-                        </div>
-                    </div>`;
+                        <div class="etiqueta">
+                            <img src="${et.qrImg}" alt="QR">
+                            <div class="info">
+                                <p><strong>SKU:</strong><br>${et.sku}</p>
+                                <p><strong>Solicitud:</strong><br>${et.solicitudID}</p>
+                                <p class="descripcion"><strong>Descripción:</strong><br>${et.descripcion}</p>
+                            </div>
+                        </div>`;
                 }).join('')}
             </div>
             <script>
@@ -248,8 +247,7 @@ function generarEtiquetas() {
             <\/script>
         </body>
         </html>
-        `);
-
+    `);
     win.document.close();
 }
 

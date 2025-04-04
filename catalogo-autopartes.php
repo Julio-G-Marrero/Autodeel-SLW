@@ -395,6 +395,20 @@ add_action('wp_ajax_obtener_datos_ubicacion', function () {
     }
 });
 
+// Endpoint AJAX: Consultar precios de listas de precios por sku
+add_action('wp_ajax_obtener_precio_por_sku', function () {
+    global $wpdb;
+
+    $sku = sanitize_text_field($_POST['sku']);
+    $tabla = $wpdb->prefix . 'precios_catalogos';
+
+    $resultado = $wpdb->get_results(
+        $wpdb->prepare("SELECT catalogo, precio_proveedor, precio_publico FROM $tabla WHERE sku_base = %s", $sku)
+    );
+
+    wp_send_json_success($resultado);
+});
+
 // Endpoint AJAX: asignar producto escaneado a la ubicación activa
 add_action('wp_ajax_asignar_producto_a_ubicacion', function () {
     $sku = sanitize_text_field($_POST['sku'] ?? '');

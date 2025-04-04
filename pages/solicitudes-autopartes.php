@@ -417,6 +417,7 @@ function mostrarFormularioCreacionProducto(solicitudId, codigo, descripcion, ubi
             <label class="block text-sm font-medium">Nombre del Producto</label>
             <input type="text" id="nombre" name="nombre" value="${descripcion}" class="w-full border rounded p-2 mb-2">
 
+            <div id="precio-referencia" class="bg-gray-100 p-3 rounded mb-4 text-sm text-gray-700" style="display: none;"></div>
             <label class="block text-sm font-medium">Precio</label>
             <input type="number" id="precio" name="precio" class="w-full border rounded p-2 mb-2">
 
@@ -445,6 +446,28 @@ function mostrarFormularioCreacionProducto(solicitudId, codigo, descripcion, ubi
             if (sugerida) {
                 document.getElementById("categoria").value = sugerida;
             }
+            // ✅ Coloca aquí la llamada AJAX para mostrar precios sugeridos
+            fetch(ajaxurl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'obtener_precio_por_sku',
+                    sku: codigo
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                const div = document.getElementById("precio-referencia");
+                if (data.success && data.data.length > 0) {
+                    let contenido = `<strong>Precios encontrados SIN IVA para SKU ${codigo}:</strong><ul class="mt-1 list-disc list-inside">`;
+                    data.data.forEach(p => {
+                        contenido += `<li><strong>${p.catalogo}:</strong> Proveedor: $${parseFloat(p.precio_proveedor).toFixed(2)}, Público: $${parseFloat(p.precio_publico).toFixed(2)}</li>`;
+                    });
+                    contenido += `</ul>`;
+                    div.innerHTML = contenido;
+                    div.style.display = 'block';
+                }
+            });
         },
         focusConfirm: false,
         showCancelButton: true,

@@ -1,262 +1,196 @@
 <?php
-if ( ! defined('ABSPATH') ) {
-    exit;
+if (!defined('ABSPATH')) exit;
+
+// Solo para administradores
+if (!current_user_can('manage_options')) {
+    wp_die(__('No tienes permisos para acceder a esta página.'));
 }
 
 global $wpdb;
+$tabla_precios = $wpdb->prefix . 'precios_catalogos';
+$catalogos_disponibles = $wpdb->get_col("SELECT DISTINCT catalogo FROM $tabla_precios ORDER BY catalogo ASC");
 
-// Incluir funciones para manejo de archivos (si no están ya cargadas)
-if ( ! function_exists('wp_handle_upload') ) {
-    require_once(ABSPATH . 'wp-admin/includes/file.php');
+// Eliminar todos los precios de un catálogo
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_catalogo'])) {
+    $catalogo_a_eliminar = sanitize_text_field($_POST['eliminar_catalogo']);
+    $eliminados = $wpdb->delete($tabla_precios, ['catalogo' => $catalogo_a_eliminar]);
+
+    echo '<div class="notice notice-warning"><p>Se eliminaron <strong>' . intval($eliminados) . '</strong> precios del catálogo <strong>' . esc_html($catalogo_a_eliminar) . '</strong>.</p></div>';
 }
 
-$upload_notice = '';
+// Subida y procesamiento del archivo
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
+    $catalogo = sanitize_text_field($_POST['catalogo']);
+    $archivo = $_FILES['csv_file'];
 
-// Procesar la subida de archivos cuando se envíe el formulario
-if ( $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_price_lists']) ) {
-    // Procesar archivo de Precio Público
-    if ( ! empty( $_FILES['public_price_file']['name'] ) ) {
-        $uploaded_file = $_FILES['public_price_file'];
-        $upload_overrides = array( 'test_form' => false );
-        $movefile = wp_handle_upload( $uploaded_file, $upload_overrides );
-        if ( $movefile && ! isset( $movefile['error'] ) ) {
-            update_option( 'catalogo_public_price_list', $movefile['url'] );
-            $upload_notice .= '<div class="notice notice-success"><p>Archivo de Precio Público subido correctamente.</p></div>';
+    // Validar si ya hay registros para este catálogo
+    $ya_existen = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM $tabla_precios WHERE catalogo = %s",
+        $catalogo
+    ));
+
+    if ($ya_existen > 0) {
+        echo '<div class="notice notice-error"><p>⚠️ Ya existen precios para el catálogo <strong>' . esc_html($catalogo) . '</strong>. Elimínalos antes de volver a subir.</p></div>';
+    } else {
+        if ($archivo['error'] === 0 && pathinfo($archivo['name'], PATHINFO_EXTENSION) === 'csv') {
+            $handle = fopen($archivo['tmp_name'], 'r');
+            $cabecera = fgetcsv($handle); // Leer encabezado
+
+            $insertados = 0;
+            $ignorados = 0;
+
+            while (($datos = fgetcsv($handle, 1000, ',')) !== false) {
+                // Validación y asignación por columnas:
+                // [0] SKU
+                // [1] PRECIO PUBLICO SIN IVA
+                // [2] PRECIO PUBLICO CON IVA INCLUIDO
+                // [3] PRECIO PROVEEDOR SIN IVA
+                // [4] PRECIO PROVEEDOR CON IVA INCLUIDO
+
+                if (count($datos) < 5) {
+                    $ignorados++;
+                    continue;
+                }
+
+                $sku_completo = trim($datos[0]);
+                $sku_base = explode('#', $sku_completo)[0];
+
+                $precio_publico = floatval(str_replace(['$', ','], '', $datos[2] ?? 0));
+                $precio_proveedor = floatval(str_replace(['$', ','], '', $datos[4] ?? 0));
+
+                if (!$sku_base || $precio_publico <= 0) {
+                    $ignorados++;
+                    continue;
+                }
+
+                $existe_sku = $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM $tabla_precios WHERE sku_base = %s AND catalogo = %s",
+                    $sku_base, $catalogo
+                ));
+
+                if ($existe_sku > 0) {
+                    $ignorados++;
+                    continue; // no sobrescribimos
+                }
+
+                $resultado = $wpdb->insert(
+                    $tabla_precios,
+                    [
+                        'sku_base' => $sku_base,
+                        'precio_proveedor' => $precio_proveedor,
+                        'precio_publico' => $precio_publico,
+                        'catalogo' => $catalogo,
+                        'fecha_subida' => current_time('mysql')
+                    ]
+                );
+
+                if ($resultado !== false) {
+                    $insertados++;
+                } else {
+                    $ignorados++;
+                }
+            }
+
+            fclose($handle);
+
+            echo '<div class="notice notice-success"><p>';
+            echo "Carga completada: <strong>$insertados insertados</strong>, <strong>$ignorados ignorados</strong>.";
+            echo '</p></div>';
         } else {
-            $upload_notice .= '<div class="notice notice-error"><p>Error al subir archivo de Precio Público: ' . esc_html( $movefile['error'] ) . '</p></div>';
+            echo '<div class="notice notice-error"><p>Error al subir el archivo. Asegúrate de que sea un CSV válido.</p></div>';
         }
     }
-    // Procesar archivo de Precio Proveedores
-    if ( ! empty( $_FILES['supplier_price_file']['name'] ) ) {
-        $uploaded_file = $_FILES['supplier_price_file'];
-        $upload_overrides = array( 'test_form' => false );
-        $movefile = wp_handle_upload( $uploaded_file, $upload_overrides );
-        if ( $movefile && ! isset( $movefile['error'] ) ) {
-            update_option( 'catalogo_supplier_price_list', $movefile['url'] );
-            $upload_notice .= '<div class="notice notice-success"><p>Archivo de Precio Proveedores subido correctamente.</p></div>';
-        } else {
-            $upload_notice .= '<div class="notice notice-error"><p>Error al subir archivo de Precio Proveedores: ' . esc_html( $movefile['error'] ) . '</p></div>';
-        }
-    }
-}
-
-// Recuperar los archivos subidos (si existen)
-$public_price_file_url = get_option( 'catalogo_public_price_list', '' );
-$supplier_price_file_url = get_option( 'catalogo_supplier_price_list', '' );
-
-// Obtener el SKU para consultar las listas de precios (en este ejemplo se utiliza para realizar una consulta en la base de datos)
-$catalog_sku = isset( $_GET['catalog_sku'] ) ? sanitize_text_field( $_GET['catalog_sku'] ) : '';
-
-$public_prices = [];
-$supplier_prices = [];
-
-// Si se proporciona un SKU, se realizan las consultas en las tablas correspondientes (ajusta las consultas según tu estructura)
-if ( ! empty( $catalog_sku ) ) {
-    $public_prices = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM wp_lista_precio_publico WHERE sku = %s", $catalog_sku ) );
-    $supplier_prices = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM wp_lista_precio_proveedores WHERE sku = %s", $catalog_sku ) );
 }
 ?>
 
-<div class="wrap mi-lista-precios">
-    <h2>Subir y Procesar Listas de Precios para Autopartes</h2>
-    
-    <?php
-    if ( ! empty( $upload_notice ) ) {
-        echo $upload_notice;
-    }
-    ?>
-    
-    <!-- Formulario para subir archivos de listas de precios -->
-    <form method="post" enctype="multipart/form-data" class="price-upload-form">
-        <h3>Subir Archivo de Precio Público</h3>
-        <div class="form-group">
-            <input type="file" name="public_price_file" class="form-control">
-            <?php if ( $public_price_file_url ) : ?>
-                <p>Archivo actual: <a href="<?php echo esc_url( $public_price_file_url ); ?>" target="_blank">Ver Archivo</a></p>
-            <?php endif; ?>
-        </div>
-        
-        <h3>Subir Archivo de Precio Proveedores</h3>
-        <div class="form-group">
-            <input type="file" name="supplier_price_file" class="form-control">
-            <?php if ( $supplier_price_file_url ) : ?>
-                <p>Archivo actual: <a href="<?php echo esc_url( $supplier_price_file_url ); ?>" target="_blank">Ver Archivo</a></p>
-            <?php endif; ?>
-        </div>
-        
-        <div class="form-group">
-            <button type="submit" name="upload_price_lists" class="btn btn-primary">Subir Archivos</button>
-        </div>
+<div class="wrap">
+    <h1>Subir Lista de Precios</h1>
+    <form method="post" enctype="multipart/form-data">
+        <table class="form-table">
+            <tr>
+                <th scope="row"><label for="catalogo">Nombre del Catálogo</label></th>
+                <td><input type="text" name="catalogo" id="catalogo" value="RADEC" class="regular-text" required></td>
+            </tr>
+            <tr>
+                <th scope="row"><label for="csv_file">Archivo CSV</label></th>
+                <td><input type="file" name="csv_file" id="csv_file" accept=".csv" required></td>
+            </tr>
+        </table>
+        <p><input type="submit" value="Subir y Procesar" class="button button-primary"></p>
     </form>
-    
     <hr>
-    
-    <!-- Formulario para consultar las listas de precios según el SKU del catálogo profesional -->
-    <h2>Consultar Listas de Precios</h2>
-    <form method="GET" action="" class="price-search-form">
-        <input type="hidden" name="page" value="listas-precios">
-        <div class="form-group">
-            <label for="catalog_sku">SKU del Catálogo Profesional:</label>
-            <input type="text" name="catalog_sku" id="catalog_sku" value="<?php echo esc_attr( $catalog_sku ); ?>" class="form-control">
-        </div>
-        <div class="form-group">
-            <button type="submit" class="btn btn-primary">Buscar</button>
-        </div>
+    <h2>Eliminar precios por catálogo</h2>
+    <?php if (!empty($catalogos_disponibles)): ?>
+    <form method="post" style="margin-bottom: 2rem;">
+        <table class="form-table">
+            <tr>
+                <th scope="row"><label for="eliminar_catalogo_input">Selecciona un catálogo</label></th>
+                <td>
+                    <select name="eliminar_catalogo" id="eliminar_catalogo_input" required>
+                        <option value="">-- Selecciona un catálogo --</option>
+                        <?php foreach ($catalogos_disponibles as $catalogo): ?>
+                            <option value="<?php echo esc_attr($catalogo); ?>"><?php echo esc_html($catalogo); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </td>
+            </tr>
+        </table>
+        <button type="submit" class="button button-danger" onclick="return confirm('¿Estás seguro de eliminar todos los precios del catálogo seleccionado?')">
+            🗑 Eliminar todos los precios del catálogo
+        </button>
     </form>
-    
-    <?php if ( ! empty( $catalog_sku ) ) : ?>
-        <h3 class="tabla-titulo">Precio Público</h3>
-        <?php if ( ! empty( $public_prices ) ) : ?>
-            <table class="wp-list-table widefat striped">
-                <thead>
-                    <tr>
-                        <th>SKU</th>
-                        <th>Precio</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ( $public_prices as $price ) : ?>
-                        <tr>
-                            <td><?php echo esc_html( $price->sku ); ?></td>
-                            <td><?php echo esc_html( $price->price ); ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php else : ?>
-            <p>No se encontraron registros para el precio público.</p>
-        <?php endif; ?>
-        
-        <h3 class="tabla-titulo">Precio Proveedores</h3>
-        <?php if ( ! empty( $supplier_prices ) ) : ?>
-            <table class="wp-list-table widefat striped">
-                <thead>
-                    <tr>
-                        <th>SKU</th>
-                        <th>Precio</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ( $supplier_prices as $price ) : ?>
-                        <tr>
-                            <td><?php echo esc_html( $price->sku ); ?></td>
-                            <td><?php echo esc_html( $price->price ); ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php else : ?>
-            <p>No se encontraron registros para el precio proveedores.</p>
-        <?php endif; ?>
+    <?php else: ?>
+        <p><em>No hay catálogos disponibles para eliminar.</em></p>
     <?php endif; ?>
 </div>
 
-<style>
-/* Estilos para la página de Listas de Precios */
-.mi-lista-precios {
-    background: #fff;
-    padding: 20px;
-    border: 1px solid #e1e4e8;
-    border-radius: 8px;
-    max-width: 1100px;
-    margin: 20px auto;
-}
+<?php
+// Consulta visual de precios cargados
+$sku_filtro = isset($_GET['sku']) ? sanitize_text_field($_GET['sku']) : '';
+$filtro_sql = $sku_filtro ? $wpdb->prepare("WHERE sku_base LIKE %s", '%' . $sku_filtro . '%') : '';
 
-.mi-lista-precios h2 {
-    color: #0073aa;
-    margin-bottom: 20px;
-}
+$resultados = $wpdb->get_results("
+    SELECT sku_base, precio_proveedor, precio_publico, catalogo, fecha_subida 
+    FROM $tabla_precios
+    $filtro_sql
+    ORDER BY fecha_subida DESC
+    LIMIT 200
+");
 
-.price-upload-form, .price-search-form {
-    background: #f9f9f9;
-    padding: 15px;
-    border: 1px solid #e1e4e8;
-    border-radius: 8px;
-    margin-bottom: 20px;
-}
+?>
 
-.price-upload-form h3 {
-    margin-top: 0;
-}
+<hr>
+<h2>Buscar precios por SKU</h2>
+<form method="get" style="margin-bottom: 1rem;">
+    <input type="hidden" name="page" value="listas-precios" />
+    <label for="sku">Buscar SKU:</label>
+    <input type="text" name="sku" id="sku" value="<?php echo esc_attr($sku_filtro); ?>" placeholder="Ej. 017-16303-25" />
+    <input type="submit" class="button" value="Buscar">
+</form>
 
-.price-upload-form .form-group,
-.price-search-form .form-group {
-    margin-bottom: 15px;
-    display: flex;
-    flex-direction: column;
-}
-
-.price-upload-form label,
-.price-search-form label {
-    font-weight: bold;
-    margin-bottom: 5px;
-}
-
-.form-control {
-    padding: 8px;
-    border: 1px solid #ccd0d4;
-    border-radius: 4px;
-    font-size: 1rem;
-}
-
-.btn {
-    display: inline-block;
-    padding: 8px 16px;
-    border: none;
-    border-radius: 4px;
-    font-size: 1rem;
-    cursor: pointer;
-    text-align: center;
-}
-
-.btn-primary {
-    background-color: #0073aa;
-    color: #fff;
-}
-
-.btn-primary:hover {
-    background-color: #005177;
-}
-
-.tabla-titulo {
-    margin-top: 30px;
-    margin-bottom: 10px;
-    font-size: 1.3rem;
-    color: #333;
-}
-
-.mi-lista-precios table {
-    width: 100%;
-    margin-bottom: 20px;
-    border-collapse: collapse;
-}
-
-.mi-lista-precios table th,
-.mi-lista-precios table td {
-    padding: 12px;
-    border: 1px solid #e1e4e8;
-    text-align: left;
-}
-
-.mi-lista-precios table th {
-    background: #f7f9fc;
-    font-weight: bold;
-}
-
-/* Notificaciones */
-.notice {
-    padding: 10px;
-    margin-bottom: 15px;
-    border-left: 4px solid;
-}
-
-.notice-success {
-    background-color: #e6ffed;
-    border-color: #46b450;
-}
-
-.notice-error {
-    background-color: #ffeef0;
-    border-color: #d73a49;
-}
-</style>
+<table class="widefat striped" style="margin-top: 1rem;">
+    <thead>
+        <tr>
+            <th>SKU Base</th>
+            <th>Precio Proveedor</th>
+            <th>Precio Público</th>
+            <th>Catálogo</th>
+            <th>Fecha de Subida</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php if (count($resultados) > 0): ?>
+            <?php foreach ($resultados as $fila): ?>
+                <tr>
+                    <td><?php echo esc_html($fila->sku_base); ?></td>
+                    <td>$<?php echo number_format($fila->precio_proveedor, 2); ?></td>
+                    <td>$<?php echo number_format($fila->precio_publico, 2); ?></td>
+                    <td><?php echo esc_html($fila->catalogo); ?></td>
+                    <td><?php echo esc_html($fila->fecha_subida); ?></td>
+                </tr>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <tr><td colspan="5">No se encontraron registros.</td></tr>
+        <?php endif; ?>
+    </tbody>
+</table>
