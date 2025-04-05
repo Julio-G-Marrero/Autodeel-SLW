@@ -2,6 +2,8 @@
 if (!defined('ABSPATH')) exit;
 
 include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
+
 global $wpdb;
 
 $solicitud_id = isset($_GET['id']) ? intval($_GET['id']) : 0;

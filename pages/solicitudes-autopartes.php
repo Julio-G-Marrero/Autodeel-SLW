@@ -2,6 +2,8 @@
 if (!defined('ABSPATH')) exit;
 
 include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
+
 global $wpdb;
 $ubicaciones = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}ubicaciones_autopartes ORDER BY nombre ASC");
 $solicitudes = $wpdb->get_results("SELECT s.*, a.codigo, a.descripcion, u.nombre AS ubicacion_nombre FROM {$wpdb->prefix}solicitudes_piezas s INNER JOIN {$wpdb->prefix}autopartes a ON s.autoparte_id = a.id LEFT JOIN {$wpdb->prefix}ubicaciones_autopartes u ON s.ubicacion_id = u.id WHERE s.estado = 'pendiente' ORDER BY s.fecha_envio DESC");
@@ -303,7 +305,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 cancelButtonText: 'Cerrar'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    mostrarFormularioCreacionProducto(id, codigo, descripcion, ubicacion, observaciones, compatibilidades);
+                    mostrarFormularioCreacionProducto(id, codigo, descripcion, ubicacion, observaciones, compatibilidades, estado);
                 }
             });
         });
@@ -361,7 +363,7 @@ function compressImage(url, quality = 0.7, maxWidth = 1024, maxHeight = 1024) {
   });
 }
 
-function mostrarFormularioCreacionProducto(solicitudId, codigo, descripcion, ubicacionActual, observaciones, compatibilidades) {
+function mostrarFormularioCreacionProducto(solicitudId, codigo, descripcion, ubicacionActual, observaciones, compatibilidades,estado) {
     const imagenes = JSON.parse(
         document.querySelector(`button[data-id="${solicitudId}"]`).dataset.imagenes || '[]'
     );
@@ -405,46 +407,73 @@ function mostrarFormularioCreacionProducto(solicitudId, codigo, descripcion, ubi
         .map(cat => `<option value="${cat.term_id}">${cat.name}</option>`)
         .join('');
 
-    Swal.fire({
-        title: 'Crear Producto',
-        html: `
-        <form id="formCrearProducto" class="text-left">
-            <input type="hidden" name="solicitud_id" value="${solicitudId}">
+        Swal.fire({
+    title: 'Crear Producto',
+    html: `
+    <form id="formCrearProducto" class="form-crear-producto">
+        <input type="hidden" name="solicitud_id" value="${solicitudId}">
 
-            <label class="block text-sm font-medium">Código (SKU)</label>
-            <input type="text" id="sku" name="sku" value="${codigo}" class="w-full border rounded p-2 mb-2">
+        <div class="form-group">
+            <label for="sku">Código (SKU)</label>
+            <input type="text" id="sku" name="sku" value="${codigo}">
+        </div>
 
-            <label class="block text-sm font-medium">Nombre del Producto</label>
-            <input type="text" id="nombre" name="nombre" value="${descripcion}" class="w-full border rounded p-2 mb-2">
+        <div class="form-group">
+            <label for="nombre">Nombre del Producto</label>
+            <input type="text" id="nombre" name="nombre" value="${descripcion}">
+        </div>
 
-            <div id="precio-referencia" class="bg-gray-100 p-3 rounded mb-4 text-sm text-gray-700" style="display: none;"></div>
-            <label class="block text-sm font-medium">Precio</label>
-            <input type="number" id="precio" name="precio" class="w-full border rounded p-2 mb-2">
+        <div id="precio-referencia" class="precio-referencia"></div>
 
-            <label class="block text-sm font-medium">Categoría</label>
-            <select id="categoria" name="categoria" class="w-full border rounded p-2 mb-2">
+        <div class="form-group">
+            <label for="precio">Precio</label>
+            <input type="number" id="precio" name="precio">
+        </div>
+
+        <div class="form-group">
+            <label for="categoria">Categoría</label>
+            <select id="categoria" name="categoria">
                 <option value="">Seleccione una</option>
                 ${opcionesCategorias}
             </select>
+        </div>
 
-            <label class="block text-sm font-medium">Ubicación Física</label>
-            <select id="ubicacion" name="ubicacion" class="w-full border rounded p-2 mb-2">
+        <div class="form-group">
+            <label for="ubicacion">Ubicación Física</label>
+            <select id="ubicacion" name="ubicacion">
                 <option value="">Seleccione una ubicación</option>
                 ${opcionesUbicaciones}
             </select>
+        </div>
 
-            <label class="block text-sm font-medium">Observaciones</label>
-            <textarea id="observaciones" name="observaciones" class="w-full border rounded p-2 mb-4">${observaciones}</textarea>
+        <div class="form-group">
+            <label for="estado_pieza">Estado de la Pieza</label>
+            <select id="estado_pieza" name="estado_pieza">
+                <option value="">Selecciona el estado</option>
+                <option value="nuevo">Nuevo</option>
+                <option value="usado_buen_estado">Usado en buen estado</option>
+                <option value="usado_reparacion">Usado para reparación</option>
+            </select>
+        </div>
 
-            ${galeriaHTML}
+        <div class="form-group">
+            <label for="observaciones">Observaciones</label>
+            <textarea id="observaciones" name="observaciones">${observaciones}</textarea>
+        </div>
 
-            <!-- Compatibilidades como input hidden -->
-            <input type="hidden" name="compatibilidades_debug" id="compatibilidades_debug" value='${JSON.stringify(compatibilidades)}'>
-        </form>
+        ${galeriaHTML}
+
+        <input type="hidden" name="compatibilidades_debug" id="compatibilidades_debug" value='${JSON.stringify(compatibilidades)}'>
+    </form>
     `,
+
         didOpen: () => {
             if (sugerida) {
                 document.getElementById("categoria").value = sugerida;
+            }
+            const selectEstado = document.getElementById("estado_pieza");
+            if (estado && selectEstado) {
+                selectEstado.value = estado;
             }
             // ✅ Coloca aquí la llamada AJAX para mostrar precios sugeridos
             fetch(ajaxurl, {
@@ -490,6 +519,7 @@ function mostrarFormularioCreacionProducto(solicitudId, codigo, descripcion, ubi
                         categoria: document.getElementById('categoria').value,
                         ubicacion: document.getElementById('ubicacion').value,
                         observaciones: document.getElementById('observaciones').value,
+                        estado_pieza: document.getElementById('estado_pieza')?.value || '',
                         imagenes: imagenesComprimidas,
                         compatibilidades: compatibilidades
                     });
@@ -513,6 +543,7 @@ function mostrarFormularioCreacionProducto(solicitudId, codigo, descripcion, ubi
             formData.append('observaciones', datos.observaciones);
             formData.append('imagenes', JSON.stringify(datos.imagenes));
             formData.append('compatibilidades', JSON.stringify(datos.compatibilidades));
+            formData.append('estado_pieza', datos.estado_pieza);
 
             Swal.fire({
                 title: 'Creando producto...',
@@ -560,6 +591,59 @@ function mostrarFormularioCreacionProducto(solicitudId, codigo, descripcion, ubi
 
 
 <style>
+.form-crear-producto {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    font-size: 14px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group label {
+    font-weight: 600;
+    margin-bottom: 5px;
+    color: #333;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+    transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #0073aa;
+    box-shadow: 0 0 0 2px rgba(0, 115, 170, 0.15);
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 70px;
+}
+
+.precio-referencia {
+    background-color: #f1f5f9;
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #333;
+    border-left: 4px solid #0073aa;
+    display: none;
+}
+
 button.absolute.top-2.right-2.text-white.text-2xl.font-bold.hover\:text-red-300 {
     color: red;
 }

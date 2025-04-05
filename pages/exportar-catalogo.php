@@ -2,6 +2,9 @@
 if (!defined('ABSPATH') || !isset($_GET['catalogo_id'])) {
     exit;
 }
+include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
+
 
 global $wpdb;
 

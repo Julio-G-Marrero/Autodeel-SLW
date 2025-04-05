@@ -29,7 +29,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Captura de Productos',
         'Captura de Productos',
-        'manage_options',
+        'ver_captura_productos',
         'captura-productos',
         'catalogo_autopartes_captura_productos'
     );

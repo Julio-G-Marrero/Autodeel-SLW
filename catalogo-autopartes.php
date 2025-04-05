@@ -195,13 +195,18 @@ function crear_producto_autoparte() {
     $solicitud_id = intval($_POST['solicitud_id'] ?? 0);
     $imagenes = json_decode(stripslashes($_POST['imagenes'] ?? '[]'), true);
     $compatibilidades = json_decode(stripslashes($_POST['compatibilidades'] ?? '[]'), true);
+    $estado_pieza = sanitize_text_field($_POST['estado_pieza'] ?? '');
+
     if (!is_array($imagenes)) $imagenes = [];
     if (!is_array($compatibilidades)) $compatibilidades = [];
-
+    $estado_formateado = ucwords(str_replace('_', ' ', $estado_pieza));
+    $post_content = "Estado de la pieza: {$estado_formateado}\n\n, observaciones: {$observaciones}";
+    
+    
     // Crear producto
     $post_id = wp_insert_post([
         'post_title'   => $nombre,
-        'post_content' => 'Producto creado desde solicitud de autoparte.',
+        'post_content' => $post_content,
         'post_status'  => 'publish',
         'post_type'    => 'product',
     ]);

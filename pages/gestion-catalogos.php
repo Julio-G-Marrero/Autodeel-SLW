@@ -4,6 +4,7 @@ if (!defined('ABSPATH')) {
 }
 
 include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
 
 // Procesar eliminación de catálogo
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['eliminar_catalogo'])) {

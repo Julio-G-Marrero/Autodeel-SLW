@@ -2,6 +2,8 @@
 if (!defined('ABSPATH')) exit;
 
 include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
+
 global $wpdb;
 
 $solicitudes_aprobadas = $wpdb->get_results("
@@ -186,13 +188,16 @@ function generarEtiquetas() {
                 .etiqueta {
                     width: 4in;
                     height: 2in;
+                    align-items: center;        /* Centrado vertical */
+                    justify-content: center;    /* Centrado horizontal */
+                    flex-direction: row;      
                     box-sizing: border-box;
                     padding: 0.2in;
                     display: flex;
                     align-items: flex-start;
                     justify-content: flex-start;
                     page-break-inside: avoid;
-                    gap: 0.3in;
+                    gap: 0.5in;
                 }
                 .etiqueta img {
                     width: 1.5in;
@@ -204,7 +209,7 @@ function generarEtiquetas() {
                     font-size: 10pt;
                     display: flex;
                     flex-direction: column;
-                    justify-content: flex-start;
+                    justify-content: center; /* Centrado vertical del texto */
                 }
                 .info p {
                     margin: 0 0 4px;
@@ -212,16 +217,20 @@ function generarEtiquetas() {
                     font-size: 9.5pt;
                 }
                 .descripcion {
-                    display: -webkit-box;
-                    -webkit-line-clamp: 2;
-                    -webkit-box-orient: vertical;
+                    height: 4em; /* Aumentado desde 2.5em */
+                    line-height: 1.3em;
                     overflow: hidden;
-                    text-overflow: ellipsis;
-                    line-height: 1.2;
-                    max-height: 2.6em;
                     font-size: 9.5pt;
                     word-break: break-word;
                 }
+                .descripcion .label {
+                    font-weight: bold;
+                    display: block;
+                }
+                .descripcion .texto {
+                    display: block;
+                }
+
             </style>
         </head>
         <body>
@@ -234,7 +243,10 @@ function generarEtiquetas() {
                             <div class="info">
                                 <p><strong>SKU:</strong><br>${et.sku}</p>
                                 <p><strong>Solicitud:</strong><br>${et.solicitudID}</p>
-                                <p class="descripcion"><strong>Descripción:</strong><br>${et.descripcion}</p>
+                                <div class="descripcion">
+                                    <span class="label">Descripción:</span>
+                                    <span class="texto">${et.descripcion}</span>
+                                </div>
                             </div>
                         </div>`;
                 }).join('')}

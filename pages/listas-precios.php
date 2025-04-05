@@ -1,5 +1,8 @@
 <?php
 if (!defined('ABSPATH')) exit;
+include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
+
 
 // Solo para administradores
 if (!current_user_can('manage_options')) {
