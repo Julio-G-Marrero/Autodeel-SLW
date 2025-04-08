@@ -74,7 +74,7 @@ function catalogo_autopartes_menu() {
         null, // No aparece en el menú
         'Resumen de Pieza',
         'Resumen de Pieza',
-        'manage_options',
+        'ver_resumen_pieza',
         'resumen-pieza',
         'catalogo_autopartes_resumen_pieza'
     );
@@ -92,7 +92,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Solicitudes de Piezas',
         'Solicitudes',
-        'manage_options',
+        'ver_solicitudes',
         'solicitudes-autopartes',
         'catalogo_autopartes_solicitudes_autopartes'
     );

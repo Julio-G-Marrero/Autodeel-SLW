@@ -115,8 +115,8 @@ $ubicaciones = $wpdb->get_results("SELECT * FROM $tabla ORDER BY id DESC");
                                 <?php $qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" . urlencode($u->codigo_qr); ?>
                                 <div class="qr-actions">
                                     <img src="<?= esc_url($qr_url) ?>" class="img-qr" onclick="verQR('<?= esc_url($qr_url) ?>')">
-                                    <button type="button" class="btn-secundario" onclick="imprimirQR('<?= esc_url($qr_url) ?>')">Imprimir</button>
-                                </div>
+                                    <button type="button" class="btn-secundario" onclick="imprimirQR('<?= esc_url($qr_url) ?>', '<?= esc_js($u->nombre) ?>')">Imprimir</button>
+                                    </div>
                             <?php else: ?>
                                 <em>Sin QR</em>
                             <?php endif; ?>
@@ -154,12 +154,25 @@ function verImagenGrande(url, titulo = 'Vista previa') {
         }
     });
 }
-function imprimirQR(qrURL) {
+function imprimirQR(qrURL, nombreUbicacion) {
     const win = window.open('', '_blank');
-    win.document.write(`
+        win.document.write(`
         <html>
-            <head><title>Imprimir QR</title></head>
-            <body style="text-align:center;padding:20px;">
+            <head>
+                <title>Imprimir QR</title>
+                <style>
+                    body {
+                        text-align: center;
+                        padding: 20px;
+                        font-family: sans-serif;
+                    }
+                    h2 {
+                        margin-bottom: 20px;
+                    }
+                </style>
+            </head>
+            <body>
+                <h2>Ubicación: ${nombreUbicacion}</h2>
                 <img src="${qrURL}" style="width:300px;"><br>
                 <script>
                     window.onload = function() {

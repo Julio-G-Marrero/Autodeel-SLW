@@ -598,6 +598,7 @@ function mostrarFormularioCreacionProducto(solicitudId, codigo, descripcion, ubi
     flex-direction: column;
     gap: 15px;
     font-size: 14px;
+    text-align: justify;
 }
 
 .form-group {

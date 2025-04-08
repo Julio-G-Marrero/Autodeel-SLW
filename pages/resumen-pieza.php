@@ -24,69 +24,96 @@ if (!$pieza) {
 $imagen_url = "https://www.radec.com.mx/sites/all/files/productos/{$pieza->codigo}.jpg";
 ?>
 
-<div class="wrap">
-    <h2>Resumen de la Pieza Seleccionada</h2>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
 
-    <table class="widefat fixed">
-        <tr><th>Código:</th><td><?= esc_html($pieza->codigo) ?></td></tr>
-        <tr><th>Descripción:</th><td><?= esc_html($pieza->descripcion) ?></td></tr>
-        <?php if (!empty($pieza->sector)) : ?>
-        <tr><th>Sector:</th><td><?= esc_html($pieza->sector) ?></td></tr>
-        <?php endif; ?>
-        <tr><th>Imagen de Catálogo:</th>
-            <td><img src="<?= esc_url($imagen_url) ?>" alt="imagen" width="120"></td>
-        </tr>
-    </table>
+<div class="wrap p-6">
+    <h2 class="text-2xl font-semibold mb-6">Resumen de la Pieza Seleccionada</h2>
 
-    <h3>Compatibilidades</h3>
+    <!-- Tabla de datos -->
+    <div class="overflow-hidden rounded border border-gray-300 bg-white shadow mb-6">
+        <table class="w-full text-sm">
+            <tbody>
+                <tr class="border-b">
+                    <th class="px-4 py-2 text-left bg-gray-100 w-1/4 font-medium">Código:</th>
+                    <td class="px-4 py-2"><?= esc_html($pieza->codigo) ?></td>
+                </tr>
+                <tr class="border-b">
+                    <th class="px-4 py-2 text-left bg-gray-100">Descripción:</th>
+                    <td class="px-4 py-2"><?= esc_html($pieza->descripcion) ?></td>
+                </tr>
+                <?php if (!empty($pieza->sector)) : ?>
+                <tr class="border-b">
+                    <th class="px-4 py-2 text-left bg-gray-100">Sector:</th>
+                    <td class="px-4 py-2"><?= esc_html($pieza->sector) ?></td>
+                </tr>
+                <?php endif; ?>
+                <tr>
+                    <th class="px-4 py-2 text-left bg-gray-100">Imagen de Catálogo:</th>
+                    <td class="px-4 py-2">
+                        <img src="<?= esc_url($imagen_url) ?>" alt="imagen" class="w-32 h-auto rounded shadow">
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Compatibilidades -->
+    <h3 class="text-lg font-semibold mb-2">Compatibilidades</h3>
     <?php if ($compatibilidades): ?>
-        <ul>
+        <ul class="list-disc list-inside mb-6 text-gray-700">
             <?php foreach ($compatibilidades as $c): ?>
                 <li><?= esc_html("{$c->marca} {$c->submarca} ({$c->rango})") ?></li>
             <?php endforeach; ?>
         </ul>
     <?php else: ?>
-        <p>No hay compatibilidades registradas.</p>
+        <p class="mb-6 text-gray-500">No hay compatibilidades registradas.</p>
     <?php endif; ?>
 
-    <hr>
-    <h3>Agregar Datos de la Pieza Física</h3>
-    <form id="form-solicitud-pieza" enctype="multipart/form-data">
+    <!-- Formulario -->
+    <h3 class="text-lg font-semibold mb-3">Agregar Datos de la Pieza Física</h3>
+    <form id="form-solicitud-pieza" enctype="multipart/form-data" class="space-y-4">
         <?php wp_nonce_field('enviar_solicitud_pieza_nonce', 'enviar_solicitud_pieza_nonce_field'); ?>
         <input type="hidden" name="autoparte_id" value="<?= esc_attr($autoparte_id) ?>">
 
-        <label>Ubicación Física:</label><br>
-        <select name="ubicacion" required style="width: 300px;">
-            <option value="">Selecciona una ubicación</option>
-            <?php foreach ($ubicaciones as $u): ?>
-                <option value="<?= esc_attr($u->id) ?>"><?= esc_html($u->nombre) ?></option>
-            <?php endforeach; ?>
-        </select><br><br>
+        <div>
+            <label class="block text-sm font-medium mb-1">Ubicación Física:</label>
+            <select name="ubicacion" required class="w-full p-2 border border-gray-300 rounded">
+                <option value="">Selecciona una ubicación</option>
+                <?php foreach ($ubicaciones as $u): ?>
+                    <option value="<?= esc_attr($u->id) ?>"><?= esc_html($u->nombre) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
 
-        <label>Observaciones:</label><br>
-        <textarea name="observaciones" rows="4" cols="50"></textarea><br><br>
+        <div>
+            <label class="block text-sm font-medium mb-1">Observaciones:</label>
+            <textarea name="observaciones" rows="4" class="w-full p-2 border border-gray-300 rounded"></textarea>
+        </div>
 
-        <label>Estado de la Pieza:</label><br>
-        <select name="estado_pieza" required style="width: 300px;">
-            <option value="">Selecciona el estado</option>
-            <option value="nuevo">Nuevo</option>
-            <option value="usado_buen_estado">Usado en buen estado</option>
-            <option value="usado_reparacion">Usado para reparación</option>
-        </select><br><br>
+        <div>
+            <label class="block text-sm font-medium mb-1">Estado de la Pieza:</label>
+            <select name="estado_pieza" required class="w-full p-2 border border-gray-300 rounded">
+                <option value="">Selecciona el estado</option>
+                <option value="nuevo">Nuevo</option>
+                <option value="usado_buen_estado">Usado en buen estado</option>
+                <option value="usado_reparacion">Usado para reparación</option>
+            </select>
+        </div>
 
-        <label>Fotos de la Pieza:</label><br>
-        <input type="file" id="input-fotos" accept="image/*" multiple><br><br>
-        <div id="preview-fotos" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 10px;"></div>
-        <!-- Archivos reales -->
-        <div id="contenedor-archivos"></div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Fotos de la Pieza:</label>
+            <input type="file" id="input-fotos" accept="image/*" multiple class="w-full">
+            <div id="preview-fotos" class="mt-3 flex flex-wrap gap-3"></div>
+            <div id="contenedor-archivos"></div>
+        </div>
 
-        <button type="submit" class="button button-primary" id="btn-enviar-solicitud">
-        Enviar Solicitud para Aprobación
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+            Enviar Solicitud para Aprobación
         </button>
     </form>
 
-    <div id="estado-envio" style="margin-top: 20px;"></div>
-
+    <div id="estado-envio" class="mt-6"></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
@@ -210,115 +237,3 @@ inputFotos.addEventListener('change', () => {
     inputFotos.value = ''; // limpiar para permitir volver a seleccionar el mismo archivo
 });
 </script>
-<style>
-    /* Estilo contenedor general */
-.wrap {
-    max-width: 900px;
-    margin: auto;
-    padding: 20px;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #fff;
-}
-
-/* Títulos */
-.wrap h2, .wrap h3 {
-    margin-bottom: 20px;
-    color: #333;
-}
-
-/* Tabla */
-.wrap table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 30px;
-    background-color: #f9f9f9;
-    border: 1px solid #ddd;
-}
-.wrap th, .wrap td {
-    text-align: left;
-    padding: 12px 15px;
-    border-bottom: 1px solid #ddd;
-}
-.wrap th {
-    background-color: #f1f1f1;
-    color: #444;
-    width: 180px;
-}
-
-/* Imagen */
-.wrap img {
-    border-radius: 6px;
-    max-width: 100%;
-    height: auto;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-/* Lista de compatibilidades */
-.wrap ul {
-    list-style-type: disc;
-    margin-left: 25px;
-    margin-bottom: 30px;
-}
-.wrap li {
-    margin-bottom: 5px;
-}
-
-/* Formulario */
-#form-solicitud-pieza label {
-    display: block;
-    margin-top: 15px;
-    font-weight: 600;
-    color: #444;
-}
-#form-solicitud-pieza select,
-#form-solicitud-pieza textarea,
-#form-solicitud-pieza input[type="file"] {
-    width: 100%;
-    max-width: 500px;
-    padding: 10px;
-    font-size: 1rem;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    margin-top: 5px;
-    box-sizing: border-box;
-}
-
-/* Botón */
-#form-solicitud-pieza button {
-    margin-top: 20px;
-    padding: 10px 25px;
-    font-size: 1rem;
-    background-color: #0073aa;
-    border: none;
-    border-radius: 6px;
-    color: white;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-}
-#form-solicitud-pieza button:hover {
-    background-color: #005f8d;
-}
-
-/* Estado del envío */
-#estado-envio {
-    font-weight: bold;
-    color: #0073aa;
-}
-
-/* Responsive */
-@media screen and (max-width: 768px) {
-    .wrap {
-        padding: 15px;
-    }
-
-    .wrap th {
-        width: auto;
-    }
-
-    #form-solicitud-pieza select,
-    #form-solicitud-pieza textarea,
-    #form-solicitud-pieza input[type="file"] {
-        width: 100%;
-    }
-}
-</style>

@@ -9,8 +9,8 @@
  * License: GPL v2 or later
  */
 
-if (!defined('ABSPATH')) {
-    exit; // Evita acceso directo al archivo
+ if (!defined('ABSPATH')) {
+    exit; // Evita acceso directo
 }
 
 // Definir constantes del plugin
@@ -726,6 +726,103 @@ function buscar_autopartes_compatibles() {
 
     wp_send_json_success(['resultados' => $resultados]);
 }
+
+// ✅ Crear roles personalizados al activar el plugin
+register_activation_hook(__FILE__, 'catalogo_autopartes_crear_roles');
+
+function catalogo_autopartes_crear_roles() {
+    // Punto de Venta
+    add_role('rol_punto_venta', 'Punto de Venta', [
+        'read' => true,
+        'ver_punto_venta' => true,
+    ]);
+
+    // Capturista
+    add_role('rol_capturista', 'Capturista de Productos', [
+        'read' => true,
+        'ver_captura_productos' => true,
+    ]);
+
+    // Gestor de Cajas
+    add_role('rol_gestor_cajas', 'Gestor de Cajas', [
+        'read' => true,
+        'ver_gestion_cajas' => true,
+    ]);
+}
+
+// Oculta barra superior de WordPress (admin bar)
+add_action('after_setup_theme', function () {
+    if (!current_user_can('administrator')) {
+        show_admin_bar(false);
+    }
+});
+
+// Oculta la sidebar del admin para roles personalizados (capturista y gestor de solicitudes)
+add_action('admin_head', 'ocultar_sidebar_para_roles_personalizados');
+function ocultar_sidebar_para_roles_personalizados() {
+    if (current_user_can('rol_capturista') || current_user_can('rol_solicitudes')) {
+        echo '<style>
+            #adminmenu, #adminmenuback, #adminmenuwrap,
+            .update-nag, #screen-meta, #wpfooter {
+                display: none !important;
+            }
+            #wpcontent {
+                margin-left: 0 !important;
+            }
+        </style>';
+    }
+}
+
+// Oculta el admin bar (barra negra superior) en frontend y backend
+add_action('admin_head', 'ocultar_wpadminbar_con_css');
+add_action('wp_head', 'ocultar_wpadminbar_con_css');
+function ocultar_wpadminbar_con_css() {
+    if (!current_user_can('administrator')) {
+        echo '<style>
+            #wpadminbar {
+                display: none !important;
+            }
+            html {
+                margin-top: 0 !important;
+            }
+        </style>';
+    }
+}
+
+add_filter('login_redirect', 'redirigir_personalizado_al_login', 100, 3);
+
+function redirigir_personalizado_al_login($redirect_to, $request, $user) {
+    if (!is_wp_error($user)) {
+        $roles = (array) $user->roles;
+
+        if (in_array('rol_capturista', $roles)) {
+            return admin_url('admin.php?page=captura-productos');
+        }
+
+        if (in_array('rol_solicitudes', $roles)) {
+            return admin_url('admin.php?page=solicitudes-autopartes');
+        }
+    }
+
+    return $redirect_to;
+}
+
+add_filter('woocommerce_login_redirect', 'woocommerce_redireccion_personalizada', 10, 2);
+
+function woocommerce_redireccion_personalizada($redirect, $user) {
+    $roles = (array) $user->roles;
+
+    if (in_array('rol_capturista', $roles)) {
+        return admin_url('admin.php?page=captura-productos');
+    }
+
+    if (in_array('rol_solicitudes', $roles)) {
+        return admin_url('admin.php?page=solicitudes-autopartes');
+    }
+
+    return $redirect;
+}
+
 
 add_action('admin_enqueue_scripts', 'catalogo_autopartes_enqueue_scripts');
 add_action('wp_ajax_ajax_enviar_solicitud_pieza', 'ajax_guardar_solicitud_pieza');
