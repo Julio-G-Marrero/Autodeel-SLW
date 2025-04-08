@@ -108,14 +108,18 @@ $imagen_url = "https://www.radec.com.mx/sites/all/files/productos/{$pieza->codig
             <div id="contenedor-archivos"></div>
         </div>
 
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+        <button id="btn-enviar-solicitud" type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
             Enviar Solicitud para Aprobación
         </button>
+
     </form>
 
     <div id="estado-envio" class="mt-6"></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    const ajaxurl = "<?= admin_url('admin-ajax.php') ?>";
+</script>
 <script>
 document.getElementById('form-solicitud-pieza').addEventListener('submit', async function(e) {
     e.preventDefault();

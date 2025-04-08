@@ -49,7 +49,7 @@ $page = $_GET['page'] ?? '';
                 <?php if (current_user_can('ver_captura_productos')): ?>
                     <li>
                         <a href="?page=captura-productos" class="block px-4 py-2 rounded font-medium text-sm transition 
-                            <?= $page == 'captura-productos' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-300 hover:bg-gray-700 hover:text-white' ?>">
+                            <?= $page == 'captura-productos' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
                             Captura de Productos
                         </a>
                     </li>
@@ -58,8 +58,17 @@ $page = $_GET['page'] ?? '';
                 <?php if (current_user_can('ver_solicitudes')): ?>
                     <li>
                         <a href="?page=solicitudes-autopartes" class="block px-4 py-2 rounded font-medium text-sm transition 
-                            <?= $page == 'solicitudes-autopartes' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-300 hover:bg-gray-700 hover:text-white' ?>">
+                            <?= $page == 'solicitudes-autopartes' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
                             Solicitudes
+                        </a>
+                    </li>
+                <?php endif; ?>
+
+                <?php if (current_user_can('ver_asignar_ubicaciones_qr')): ?>
+                    <li>
+                        <a href="?page=asignar-ubicaciones-qr" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'asignar-ubicaciones-qr' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Asignar por QR
                         </a>
                     </li>
                 <?php endif; ?>

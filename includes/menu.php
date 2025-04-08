@@ -120,7 +120,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Asignar por QR',
         'Asignar por QR',
-        'manage_options',
+        'ver_asignar_ubicaciones_qr',
         'asignar-ubicaciones-qr',
         function () {
             include plugin_dir_path(__FILE__) . '../pages/asignar_ubicacion_lote.php';

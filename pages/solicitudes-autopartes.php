@@ -660,7 +660,7 @@ button.absolute.top-2.right-2.text-white.text-2xl.font-bold.hover\:text-red-300 
 }
 /* Contenedor general */
 .wrap {
-    max-width: 1100px;
+    max-width: 1200px;
     padding: 20px;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }

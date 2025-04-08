@@ -7,41 +7,63 @@ include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar
 global $wpdb;
 
 ?>
-<div class="wrap">
-    <h2>Asignar Productos a Ubicaciones (por QR)</h2>
-    <button id="btnEscanearQR" class="button button-secondary mb-2">Activar cámara</button>
-    <div id="scanner" class="mb-4" style="width: 300px; display:none;"></div>
+<div class="max-w-4xl mx-auto px-4 py-6">
+    <h2 class="text-2xl font-bold mb-6 text-gray-800">Asignar Productos a Ubicaciones (por QR)</h2>
 
-    <input type="text" id="scanInput" placeholder="Escanea una ubicación o producto..." class="w-full p-3 border rounded mb-4" autofocus />
+    <!-- Botón de cámara -->
+    <button id="btnEscanearQR" class="bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-800 transition mb-4">
+        Activar cámara
+    </button>
 
-    <div id="resultadoBusqueda" class="mt-4"></div>
+    <!-- Área del escáner -->
+    <div id="scanner" class="hidden mb-6 border border-gray-300 rounded p-4 bg-white w-full max-w-sm"></div>
 
-    <div id="ubicacionActiva" class="hidden p-4 border rounded bg-green-50 mb-4">
-        <h3 class="text-lg font-semibold">Ubicación activa:</h3>
-        <p><strong>ID:</strong> <span id="ubicacionID"></span></p>
-        <p><strong>Nombre:</strong> <span id="ubicacionNombre"></span></p>
-        <p><strong>Descripción:</strong> <span id="ubicacionDescripcion"></span></p>
-        <div id="ubicacionImagen"></div>
+    <!-- Campo de entrada -->
+    <input
+        type="text"
+        id="scanInput"
+        placeholder="Escanea una ubicación o producto..."
+        class="w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring focus:border-blue-300 mb-6"
+        autofocus
+    />
+
+    <!-- Resultado de búsqueda -->
+    <div id="resultadoBusqueda" class="mb-6 text-sm text-gray-600"></div>
+
+    <!-- Ubicación activa -->
+    <div id="ubicacionActiva" class="hidden bg-green-100 border border-green-400 rounded-lg p-4 mb-6 shadow-sm">
+        <h3 class="text-lg font-semibold text-green-800 mb-2">Ubicación activa</h3>
+        <div class="text-green-900 space-y-1">
+            <p><strong>ID:</strong> <span id="ubicacionID"></span></p>
+            <p><strong>Nombre:</strong> <span id="ubicacionNombre"></span></p>
+            <p><strong>Descripción:</strong> <span id="ubicacionDescripcion"></span></p>
+            <div id="ubicacionImagen" class="mt-2"></div>
+        </div>
     </div>
 
+    <!-- Productos asignados -->
     <div id="productosAsignados" class="hidden">
-        <h3 class="text-lg font-semibold">Productos escaneados para asignar:</h3>
-        <table class="wp-list-table widefat striped">
-        <thead>
-            <tr>
-                <th>Imagen</th>
-                <th>SKU</th>
-                <th>Nombre</th>
-                <th>Descripción</th>
-            </tr>
-        </thead>
-
-            <tbody id="tablaProductos"></tbody>
-        </table>
-        <button id="btnFinalizar" class="button button-primary mt-4">Finalizar asignación</button>
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">🧾 Productos escaneados para asignar</h3>
+        <div class="overflow-x-auto">
+            <table class="min-w-full border text-sm bg-white rounded shadow-sm">
+                <thead class="bg-gray-100 text-gray-700 uppercase text-xs">
+                    <tr>
+                        <th class="text-left px-4 py-2 border-b">Imagen</th>
+                        <th class="text-left px-4 py-2 border-b">SKU</th>
+                        <th class="text-left px-4 py-2 border-b">Nombre</th>
+                        <th class="text-left px-4 py-2 border-b">Descripción</th>
+                    </tr>
+                </thead>
+                <tbody id="tablaProductos" class="text-gray-800"></tbody>
+            </table>
+        </div>
+        <button id="btnFinalizar" class="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded shadow">
+            Finalizar asignación
+        </button>
     </div>
 </div>
 
+<script src="https://cdn.tailwindcss.com"></script>
 <!-- SweetAlert2 CDN -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
