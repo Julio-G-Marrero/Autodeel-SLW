@@ -126,6 +126,16 @@ function catalogo_autopartes_menu() {
             include plugin_dir_path(__FILE__) . '../pages/asignar_ubicacion_lote.php';
         }
     );
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Asignar Precio',
+        'Asignar Precio',
+        'manage_options', // O un rol personalizado si ya lo tienes
+        'asignar-precios',
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/asignar-precios.php';
+        }
+    );
 }
 
 add_action('admin_menu', 'catalogo_autopartes_menu');
@@ -179,4 +189,5 @@ function catalogo_autopartes_solicitudes_autopartes() {
 function catalogo_autopartes_listas_precios() {
     include_once plugin_dir_path(__FILE__) . '../pages/listas-precios.php';
 }
+
 ?>

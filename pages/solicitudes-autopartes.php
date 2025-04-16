@@ -6,11 +6,26 @@ include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar
 
 global $wpdb;
 $ubicaciones = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}ubicaciones_autopartes ORDER BY nombre ASC");
-$solicitudes = $wpdb->get_results("SELECT s.*, a.codigo, a.descripcion, u.nombre AS ubicacion_nombre FROM {$wpdb->prefix}solicitudes_piezas s INNER JOIN {$wpdb->prefix}autopartes a ON s.autoparte_id = a.id LEFT JOIN {$wpdb->prefix}ubicaciones_autopartes u ON s.ubicacion_id = u.id WHERE s.estado = 'pendiente' ORDER BY s.fecha_envio DESC");
+$estado = isset($_GET['estado']) && in_array($_GET['estado'], ['pendiente', 'borrador']) ? $_GET['estado'] : 'pendiente';
+$solicitudes = $wpdb->get_results($wpdb->prepare("
+    SELECT s.*, a.codigo, a.descripcion, u.nombre AS ubicacion_nombre
+    FROM {$wpdb->prefix}solicitudes_piezas s
+    INNER JOIN {$wpdb->prefix}autopartes a ON s.autoparte_id = a.id
+    LEFT JOIN {$wpdb->prefix}ubicaciones_autopartes u ON s.ubicacion_id = u.id
+    WHERE s.estado = %s
+    ORDER BY s.fecha_envio DESC
+", $estado));
+$activoPendiente = $estado === 'pendiente' ? 'button-primary' : 'button-secondary';
+$activoBorrador = $estado === 'borrador' ? 'button-primary' : 'button-secondary';
 ?>
 
 <div class="wrap">
-    <h2 style="font-size: 24px; margin-bottom: 20px;">Solicitudes de Autopartes Pendientes</h2>
+    <h2 style="font-size: 24px; margin-bottom: 10px;">Solicitudes de Autopartes</h2>
+
+    <div class="mb-4">
+        <button class="filtro-estado-solicitudes button <?= $activoPendiente ?>" data-estado="pendiente">Pendientes</button>
+        <button class="filtro-estado-solicitudes button <?= $activoBorrador ?>" data-estado="borrador">Borrador</button>
+    </div>
 
     <div class="responsive-table-wrapper">
         <table class="custom-responsive-table">
@@ -39,6 +54,7 @@ $solicitudes = $wpdb->get_results("SELECT s.*, a.codigo, a.descripcion, u.nombre
                         <td data-label="Acciones">
                             <button class="btn-detalles ver-detalles"
                                 data-id="<?= esc_attr($s->id) ?>" 
+                                data-estado-solicitud="<?= esc_attr($s->estado) ?>"
                                 data-codigo="<?= esc_attr($s->codigo) ?>"
                                 data-descripcion="<?= esc_attr($s->descripcion) ?>"
                                 data-ubicacion="<?= esc_attr($s->ubicacion_nombre) ?>"
@@ -68,6 +84,22 @@ $solicitudes = $wpdb->get_results("SELECT s.*, a.codigo, a.descripcion, u.nombre
 .responsive-table-wrapper {
     overflow-x: auto;
     width: 100%;
+}
+
+.btn-eliminar-solicitud {
+    background: #d33;
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    font-weight: bold;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 8px;
+    transition: background 0.2s;
+}
+
+.btn-eliminar-solicitud:hover {
+    background: #a00;
 }
 
 /* Estilo base */
@@ -240,6 +272,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const id = this.dataset.id;
             const codigo = this.dataset.codigo;
             const descripcion = this.dataset.descripcion;
+            const estadoSolicitud = this.dataset.estadoSolicitud || 'pendiente';
             const ubicacion = this.dataset.ubicacion;
             const observaciones = this.dataset.observaciones;
             const estado = this.dataset.estado || 'No especificado';
@@ -274,7 +307,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 imagenSubida = `<p class="text-gray-400 italic">Sin imágenes subidas</p>`;
             }
 
-            const contenido = `
+            let contenido = `
                 <div class="text-left space-y-4 text-sm">
                     <div><strong>Código:</strong> ${codigo}</div>
                     <div><strong>Descripción:</strong> ${descripcion}</div>
@@ -295,22 +328,119 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             `;
 
-            Swal.fire({
+            if (estadoSolicitud === 'borrador' && observaciones) {
+                contenido += `<div><strong>Motivo del Borrador:</strong> <em>${observaciones}</em></div>`;
+            }
+
+            let swalConfig = {
                 title: 'Detalles de la Solicitud',
                 html: contenido,
                 width: '700px',
                 showCloseButton: true,
-                confirmButtonText: 'Aprobar Solicitud',
                 showCancelButton: true,
                 cancelButtonText: 'Cerrar'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    mostrarFormularioCreacionProducto(id, codigo, descripcion, ubicacion, observaciones, compatibilidades, estado);
+            };
+
+            if (estadoSolicitud === 'pendiente') {
+                swalConfig.showDenyButton = true;
+                swalConfig.confirmButtonText = 'Aprobar Solicitud';
+                swalConfig.denyButtonText = 'Enviar a Borrador';
+            } else if (estadoSolicitud === 'borrador') {
+                swalConfig.confirmButtonText = 'Eliminar Solicitud';
+                swalConfig.showDenyButton = false;
+            }
+
+            Swal.fire(swalConfig).then((result) => {
+                if (estadoSolicitud === 'pendiente') {
+                    if (result.isConfirmed) {
+                        mostrarFormularioCreacionProducto(id, codigo, descripcion, ubicacion, observaciones, compatibilidades, estado);
+                    } else if (result.isDenied) {
+                        Swal.fire({
+                            title: 'Motivo del cambio a Borrador',
+                            input: 'textarea',
+                            inputLabel: 'Escribe una nota o motivo:',
+                            inputPlaceholder: 'Ej. Falta información, imágenes borrosas, etc.',
+                            inputAttributes: {
+                                'aria-label': 'Motivo para enviar a borrador'
+                            },
+                            showCancelButton: true,
+                            confirmButtonText: 'Enviar a Borrador',
+                            cancelButtonText: 'Cancelar'
+                        }).then((notaResult) => {
+                            if (notaResult.isConfirmed) {
+                                enviarSolicitudABorrador(id, notaResult.value || '');
+                            }
+                        });
+                    }
+                } else if (estadoSolicitud === 'borrador' && result.isConfirmed) {
+                    eliminarSolicitud(id);
                 }
             });
         });
     });
 });
+
+function eliminarSolicitud(id) {
+    Swal.fire({
+        title: '¿Eliminar solicitud?',
+        text: 'Esta acción eliminará la solicitud permanentemente.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            fetch(ajaxurl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'eliminar_solicitud_pieza',
+                    id
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire('Eliminado', 'La solicitud fue eliminada.', 'success')
+                        .then(() => location.reload());
+                } else {
+                    Swal.fire('Error', data.data.message || 'No se pudo eliminar.', 'error');
+                }
+            })
+            .catch(err => {
+                Swal.fire('Error', 'Error al comunicarse con el servidor.', 'error');
+                console.error(err);
+            });
+        }
+    });
+}
+
+function enviarSolicitudABorrador(solicitudId, nota = '') {
+    fetch(ajaxurl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+            action: 'marcar_solicitud_borrador',
+            id: solicitudId,
+            nota: nota
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire('Hecho', 'La solicitud fue marcada como borrador.', 'success')
+                .then(() => location.reload());
+        } else {
+            Swal.fire('Error', data.data.message || 'No se pudo actualizar.', 'error');
+        }
+    })
+    .catch(err => {
+        Swal.fire('Error', 'Error de red al enviar solicitud.', 'error');
+        console.error(err);
+    });
+}
 
 function mostrarImagenGrande(url) {
   const modal = document.getElementById('imagen-modal');
@@ -586,9 +716,58 @@ function mostrarFormularioCreacionProducto(solicitudId, codigo, descripcion, ubi
     });
 }
 
+document.querySelectorAll('.filtro-estado-solicitudes').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const estado = btn.dataset.estado;
+        const url = new URL(window.location.href);
+        url.searchParams.set('estado', estado);
+        window.location.href = url.toString();
+    });
+});
 
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.btn-eliminar-solicitud').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const id = this.dataset.id;
+
+            Swal.fire({
+                title: '¿Eliminar solicitud?',
+                text: 'Esta acción eliminará la solicitud permanentemente.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch(ajaxurl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: new URLSearchParams({
+                            action: 'eliminar_solicitud_pieza',
+                            id
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire('Eliminado', 'La solicitud fue eliminada.', 'success')
+                                .then(() => location.reload());
+                        } else {
+                            Swal.fire('Error', data.data.message || 'No se pudo eliminar.', 'error');
+                        }
+                    })
+                    .catch(err => {
+                        Swal.fire('Error', 'Error al comunicarse con el servidor.', 'error');
+                        console.error(err);
+                    });
+                }
+            });
+        });
+    });
+});
 </script>
-
 
 <style>
 .form-crear-producto {
@@ -660,7 +839,7 @@ button.absolute.top-2.right-2.text-white.text-2xl.font-bold.hover\:text-red-300 
 }
 /* Contenedor general */
 .wrap {
-    max-width: 1200px;
+    max-width: 1400px;
     padding: 20px;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }

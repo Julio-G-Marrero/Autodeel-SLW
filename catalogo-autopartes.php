@@ -650,6 +650,71 @@ function ajax_buscar_autopartes_front() {
         'total_paginas'  => ceil($query->found_posts / $por_pagina)
     ]);
 }
+function limpiar_titulo_para_mercadolibre($titulo) {
+    // Quitar abreviaciones y palabras poco útiles
+    $titulo = strtoupper($titulo);
+    $remplazos = ['IZQ', 'DER', 'S/FOCO', 'C/FOCO', 'FONDO', 'CROMADO', 'NEGRO', '-', '/', 'DEPO', 'TY', 'JP'];
+    foreach ($remplazos as $palabra) {
+        $titulo = str_replace($palabra, '', $titulo);
+    }
+
+    // Solo palabras clave significativas
+    $titulo = preg_replace('/\s+/', ' ', $titulo); // Quitar espacios múltiples
+    $titulo = trim($titulo);
+
+    return $titulo;
+}
+
+// En tu archivo principal del plugin
+add_action('admin_enqueue_scripts', function () {
+    wp_enqueue_style('swiper-css', 'https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css');
+    wp_enqueue_script('swiper-js', 'https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js', [], null, true);
+});
+
+
+
+function obtener_precio_mercado_libre() {
+    $titulo = sanitize_text_field($_GET['titulo'] ?? '');
+    if (!$titulo) {
+        wp_send_json_error(['message' => 'Título inválido']);
+    }
+
+    // Limpiar título para búsqueda
+    $titulo_busqueda = limpiar_titulo_para_mercadolibre($titulo);
+    $url = "https://api.mercadolibre.com/sites/MLM/search?q=" . urlencode($titulo_busqueda);
+
+    $response = wp_remote_get($url);
+
+    if (is_wp_error($response)) {
+        wp_send_json_error(['message' => 'Error al conectar con Mercado Libre']);
+    }
+
+    $body = wp_remote_retrieve_body($response);
+    $data = json_decode($body, true);
+
+    // Si no hay resultados, construir fallback
+    if (empty($data['results'])) {
+        $fallback_url = 'https://listado.mercadolibre.com.mx/' . rawurlencode(strtolower(str_replace(' ', '-', $titulo)));
+        wp_send_json_error([
+            'message' => 'No se encontraron resultados',
+            'fallback' => $fallback_url
+        ]);
+    }
+
+    // Extraer resultados
+    $resultados = array_slice($data['results'], 0, 5);
+    $productos = array_map(function ($item) {
+        return [
+            'titulo' => $item['title'],
+            'precio' => $item['price'],
+            'link'   => $item['permalink'],
+            'imagen' => $item['thumbnail']
+        ];
+    }, $resultados);
+
+    wp_send_json_success($productos);
+}
+add_action('wp_ajax_obtener_precio_mercado_libre', 'obtener_precio_mercado_libre');
 
 add_action('wp_ajax_obtener_submarcas', 'ajax_obtener_submarcas');
 add_action('wp_ajax_nopriv_obtener_submarcas', 'ajax_obtener_submarcas');
@@ -727,6 +792,49 @@ function buscar_autopartes_compatibles() {
     wp_send_json_success(['resultados' => $resultados]);
 }
 
+add_action('wp_ajax_marcar_solicitud_borrador', function () {
+    global $wpdb;
+
+    $id = intval($_POST['id'] ?? 0);
+    $nota = sanitize_text_field($_POST['nota'] ?? '');
+
+    if (!$id) {
+        wp_send_json_error(['message' => 'ID inválido']);
+    }
+
+    $updated = $wpdb->update(
+        "{$wpdb->prefix}solicitudes_piezas",
+        [
+            'estado' => 'borrador',
+            'observaciones' => $nota, // ✅ Aquí guardas la nota como observación
+        ],
+        ['id' => $id]
+    );
+
+    if ($updated !== false) {
+        wp_send_json_success();
+    } else {
+        wp_send_json_error(['message' => 'No se pudo actualizar la solicitud.']);
+    }
+});
+
+add_action('wp_ajax_eliminar_solicitud_pieza', function () {
+    global $wpdb;
+    $id = intval($_POST['id'] ?? 0);
+
+    if (!$id) {
+        wp_send_json_error(['message' => 'ID inválido']);
+    }
+
+    $deleted = $wpdb->delete("{$wpdb->prefix}solicitudes_piezas", ['id' => $id]);
+
+    if ($deleted !== false) {
+        wp_send_json_success();
+    } else {
+        wp_send_json_error(['message' => 'No se pudo eliminar la solicitud.']);
+    }
+});
+
 // ✅ Crear roles personalizados al activar el plugin
 register_activation_hook(__FILE__, 'catalogo_autopartes_crear_roles');
 
@@ -749,6 +857,7 @@ function catalogo_autopartes_crear_roles() {
         'ver_gestion_cajas' => true,
     ]);
 }
+
 
 // Oculta barra superior de WordPress (admin bar)
 add_action('after_setup_theme', function () {
