@@ -1,6 +1,7 @@
 <?php
 if (!defined('ABSPATH')) exit;
-
+include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
 global $wpdb;
 $productos = get_posts([
     'post_type' => 'product',
@@ -19,7 +20,7 @@ $productos = get_posts([
 <!-- SwiperJS -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@9/swiper-bundle.min.css" />
 <script src="https://cdn.jsdelivr.net/npm/swiper@9/swiper-bundle.min.js"></script>
-<div class="wrap">
+<div class="wrap ml-4">
     <h2>Asignar Precios a Autopartes</h2>
 
     <div style="overflow-x:auto; margin-top: 20px;">
@@ -530,5 +531,12 @@ img.zoom-hover-img.medium-zoom-image.medium-zoom-image--opened {
 }
 .popup-col-info p {
     font-size: 18px;
+}
+input#nuevoPrecio_783 {
+    height: auto;
+    max-width: 130px;
+    margin: 2px 0px 0px 12px;
+    border: none;
+    border-bottom: 1px solid #aeaaaa;
 }
 </style>

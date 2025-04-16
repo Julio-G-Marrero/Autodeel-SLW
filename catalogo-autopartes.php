@@ -742,6 +742,35 @@ function ajax_obtener_submarcas() {
     wp_send_json_success(['submarcas' => $submarcas]);
 }
 
+add_action('wp_ajax_guardar_precio_autoparte', 'guardar_precio_autoparte');
+
+function guardar_precio_autoparte() {
+    // Seguridad básica
+    if (!current_user_can('edit_products')) {
+        wp_send_json_error(['message' => 'No tienes permisos para editar productos.']);
+    }
+
+    $product_id = isset($_POST['id']) ? intval($_POST['id']) : 0;
+    $nuevo_precio = isset($_POST['precio']) ? floatval($_POST['precio']) : 0;
+
+    if ($product_id <= 0 || $nuevo_precio <= 0) {
+        wp_send_json_error(['message' => 'Datos inválidos.']);
+    }
+
+    // Obtener el producto
+    $product = wc_get_product($product_id);
+    if (!$product) {
+        wp_send_json_error(['message' => 'Producto no encontrado.']);
+    }
+
+    // Actualizar el precio
+    $product->set_regular_price($nuevo_precio);
+    $product->set_price($nuevo_precio);
+    $product->save();
+
+    wp_send_json_success(['message' => 'Precio actualizado correctamente.']);
+}
+
 add_action('wp_ajax_buscar_autopartes_compatibles', 'buscar_autopartes_compatibles');
 add_action('wp_ajax_nopriv_buscar_autopartes_compatibles', 'buscar_autopartes_compatibles');
 

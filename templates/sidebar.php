@@ -72,6 +72,15 @@ $page = $_GET['page'] ?? '';
                         </a>
                     </li>
                 <?php endif; ?>
+
+                <?php if (current_user_can('asignar_precio_autopartes')): ?>
+                    <li>
+                        <a href="?page=asignar-precios" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'asignar-precios' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Asignar Precios
+                        </a>
+                    </li>
+                <?php endif; ?>
             </ul>
         </nav>
     </div>

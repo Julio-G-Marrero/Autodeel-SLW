@@ -130,7 +130,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Asignar Precio',
         'Asignar Precio',
-        'manage_options', // O un rol personalizado si ya lo tienes
+        'asignar_precio_autopartes',
         'asignar-precios',
         function () {
             include plugin_dir_path(__FILE__) . '../pages/asignar-precios.php';
