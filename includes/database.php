@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) {
 }
 
 global $wpdb;
-global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios;
+global $sql_catalogos, $sql_autopartes,$sql_ventas, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios;
 $charset_collate = $wpdb->get_charset_collate();
 
 // Tabla de Precios por Catálogo (RADEC, etc.)
@@ -67,6 +67,22 @@ $sql_ubicaciones = "CREATE TABLE {$wpdb->prefix}ubicaciones_autopartes (
     PRIMARY KEY (id)
 ) $charset_collate;";
 
+$sql_ventas = "CREATE TABLE {$wpdb->prefix}ventas_autopartes (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    cliente_id BIGINT NOT NULL,
+    vendedor_id BIGINT NOT NULL,
+    productos LONGTEXT NOT NULL, -- JSON con ID, título, cantidad, precio
+    total DECIMAL(10,2) NOT NULL,
+    metodo_pago VARCHAR(50) NOT NULL,
+    canal_venta VARCHAR(50) DEFAULT 'interno',
+    tipo_cliente VARCHAR(50) DEFAULT 'externo',
+    credito_usado DECIMAL(10,2) DEFAULT 0,
+    oc_folio VARCHAR(100) DEFAULT NULL,
+    estado_pago ENUM('pagado', 'pendiente', 'vencido') DEFAULT 'pendiente',
+    fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id)
+) $charset_collate;";
+
 // Tabla de Solicitudes
 $sql_solicitudes = "CREATE TABLE {$wpdb->prefix}solicitudes_piezas (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -94,6 +110,7 @@ function catalogo_autopartes_crear_tablas() {
     dbDelta($sql_ubicaciones);
     dbDelta($sql_solicitudes);
     dbDelta($sql_precios);
+    dbDelta($sql_ventas);
 }
 
 // Función para eliminar las tablas cuando se desinstala el plugin
@@ -105,6 +122,7 @@ function catalogo_autopartes_eliminar_tablas() {
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "autopartes");
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "catalogos_refaccionarias");
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "precios_catalogos");
+    $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "ventas_autopartes");
 }
 
 // Función para buscar coincidencias en los catálogos

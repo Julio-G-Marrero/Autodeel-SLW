@@ -136,6 +136,14 @@ function catalogo_autopartes_menu() {
             include plugin_dir_path(__FILE__) . '../pages/asignar-precios.php';
         }
     );
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Ventas de Autopartes',
+        'Ventas de Autopartes',
+        'manage_options',
+        'ventas-autopartes',
+        'catalogo_autopartes_ventas_autopartes'
+    );
 }
 
 add_action('admin_menu', 'catalogo_autopartes_menu');
@@ -183,6 +191,9 @@ function catalogo_autopartes_gestion_ubicaciones() {
 
 function catalogo_autopartes_solicitudes_autopartes() {
     include_once plugin_dir_path(__FILE__) . '../pages/solicitudes-autopartes.php';
+}
+function catalogo_autopartes_ventas_autopartes() {
+    include_once plugin_dir_path(__FILE__) . '../pages/ventas-autopartes.php';
 }
 
 // Función para cargar la página de Listas de Precios
