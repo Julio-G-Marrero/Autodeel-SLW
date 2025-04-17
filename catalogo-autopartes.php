@@ -385,6 +385,100 @@ function crear_producto_autoparte() {
     ]);
 }
 
+add_action('wp_ajax_ajax_buscar_productos_compatibles', 'ajax_buscar_productos_compatibles');
+function ajax_buscar_productos_compatibles() {
+    $compat = sanitize_text_field($_POST['compatibilidad'] ?? '');
+    $categoria = sanitize_text_field($_POST['categoria'] ?? '');
+
+    if (empty($compat)) {
+        wp_send_json_error('Compatibilidad requerida.');
+    }
+
+    $tax_query = [
+        [
+            'taxonomy' => 'pa_compat_autopartes',
+            'field'    => 'name',
+            'terms'    => [$compat],
+        ]
+    ];
+
+    if (!empty($categoria)) {
+        $tax_query[] = [
+            'taxonomy' => 'product_cat',
+            'field'    => 'slug',
+            'terms'    => [$categoria],
+        ];
+    }
+
+    $query = new WP_Query([
+        'post_type' => 'product',
+        'post_status' => 'publish',
+        'posts_per_page' => 20,
+        'tax_query' => $tax_query
+    ]);
+
+    $productos = [];
+
+    while ($query->have_posts()) {
+        $query->the_post();
+        $product = wc_get_product(get_the_ID());
+
+        $productos[] = [
+            'id' => $product->get_id(),
+            'nombre' => $product->get_name(),
+            'sku' => $product->get_sku(),
+            'precio' => $product->get_price(),
+            'stock' => $product->get_stock_quantity(),
+            'imagen' => wp_get_attachment_image_url($product->get_image_id(), 'medium'),
+            'link' => get_permalink($product->get_id())
+        ];
+    }
+
+    wp_reset_postdata();
+
+    if (empty($productos)) {
+        wp_send_json_error('No se encontraron productos.');
+    }
+
+    wp_send_json_success($productos);
+}
+
+add_action('wp_ajax_obtener_marcas', 'obtener_marcas');
+function obtener_marcas() {
+    global $wpdb;
+
+    $tabla = $wpdb->prefix . 'compatibilidades';
+    $marcas = $wpdb->get_col("SELECT DISTINCT marca FROM $tabla ORDER BY marca ASC");
+
+    if (empty($marcas)) {
+        wp_send_json_error('No se encontraron marcas.');
+    }
+
+    wp_send_json_success($marcas);
+}
+
+add_action('wp_ajax_obtener_categorias_productos', 'obtener_categorias_productos');
+function obtener_categorias_productos() {
+    $categorias = get_terms([
+        'taxonomy'   => 'product_cat',
+        'hide_empty' => false,
+    ]);
+
+    if (is_wp_error($categorias) || empty($categorias)) {
+        wp_send_json_error('No se encontraron categorías');
+    }
+
+    $data = array_map(function ($cat) {
+        return [
+            'id'    => $cat->term_id,
+            'slug'  => $cat->slug,
+            'nombre'=> $cat->name
+        ];
+    }, $categorias);
+
+    wp_send_json_success($data);
+}
+
 // Endpoint AJAX: obtener datos de una ubicación
 add_action('wp_ajax_obtener_datos_ubicacion', function () {
     global $wpdb;
@@ -771,8 +865,240 @@ function guardar_precio_autoparte() {
     wp_send_json_success(['message' => 'Precio actualizado correctamente.']);
 }
 
+add_action('wp_ajax_ajax_registrar_cliente', 'ajax_registrar_cliente');
+
+function ajax_registrar_cliente() {
+    // Validar permisos
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Permisos insuficientes.']);
+    }
+
+    // Sanitizar datos
+    $nombre = sanitize_text_field($_POST['nombre'] ?? '');
+    $correo = sanitize_email($_POST['correo'] ?? '');
+    $telefono = sanitize_text_field($_POST['telefono'] ?? '');
+    $tipo = sanitize_text_field($_POST['tipo'] ?? 'externo');
+    $sucursal = sanitize_text_field($_POST['sucursal'] ?? '');
+    $requiere_oc = isset($_POST['requiere_oc']) ? 1 : 0;
+    $credito = floatval($_POST['credito'] ?? 0);
+    $dias_credito = intval($_POST['dias_credito'] ?? 0);
+    $canal = sanitize_text_field($_POST['canal'] ?? '');
+    $estado_credito = sanitize_text_field($_POST['estado_credito'] ?? 'activo');
+    $oc_obligatoria = isset($_POST['oc_obligatoria']) ? 1 : 0;
+    
+    // Validación básica
+    if (empty($nombre) || empty($correo)) {
+        wp_send_json_error(['message' => 'Faltan campos requeridos']);
+    }
+
+    // Verificar si ya existe usuario
+    if (email_exists($correo)) {
+        wp_send_json_error(['message' => 'Ya existe un usuario con ese correo']);
+    }
+
+    // Crear usuario
+    $password = wp_generate_password(10, true);
+    $user_id = wp_create_user($correo, $password, $correo);
+
+    if (is_wp_error($user_id)) {
+        wp_send_json_error(['message' => 'Error al crear el usuario']);
+    }
+
+
+    // Asignar rol de cliente
+    $user = new WP_User($user_id);
+    $user->set_role('customer');
+
+    //Enviar correo para restablecer contraseña
+    // wp_new_user_notification($user_id, null, 'user');
+
+    // Guardar metadatos personalizados
+    update_user_meta($user_id, 'nombre_completo', $nombre);
+    update_user_meta($user_id, 'telefono', $telefono);
+    update_user_meta($user_id, 'tipo_cliente', $tipo);
+    update_user_meta($user_id, 'sucursal', $sucursal);
+    update_user_meta($user_id, 'requiere_oc', $requiere_oc);
+    update_user_meta($user_id, 'credito_disponible', $credito);
+    update_user_meta($user_id, 'dias_credito', $dias_credito);
+    update_user_meta($user_id, 'canal_venta', $canal);
+    update_user_meta($user_id, 'estado_credito', $estado_credito);
+    update_user_meta($user_id, 'oc_obligatoria', $oc_obligatoria);
+    update_user_meta($user_id, 'razon_social', sanitize_text_field($_POST['razon_social'] ?? ''));
+    update_user_meta($user_id, 'rfc', strtoupper(sanitize_text_field($_POST['rfc'] ?? '')));
+    update_user_meta($user_id, 'uso_cfdi', sanitize_text_field($_POST['uso_cfdi'] ?? ''));
+    update_user_meta($user_id, 'regimen_fiscal', sanitize_text_field($_POST['regimen_fiscal'] ?? ''));
+    update_user_meta($user_id, 'fact_calle', sanitize_text_field($_POST['fact_calle'] ?? ''));
+    update_user_meta($user_id, 'fact_colonia', sanitize_text_field($_POST['fact_colonia'] ?? ''));
+    update_user_meta($user_id, 'fact_municipio', sanitize_text_field($_POST['fact_municipio'] ?? ''));
+    update_user_meta($user_id, 'fact_estado', sanitize_text_field($_POST['fact_estado'] ?? ''));
+    update_user_meta($user_id, 'fact_cp', sanitize_text_field($_POST['fact_cp'] ?? ''));
+    update_user_meta($user_id, 'fact_pais', sanitize_text_field($_POST['fact_pais'] ?? ''));
+
+
+    // También puedes enviarle un correo con su acceso si lo deseas
+
+    wp_send_json_success(['message' => 'Cliente creado con éxito']);
+}
+
+add_action('wp_ajax_ajax_buscar_cliente', 'ajax_buscar_cliente');
+
+add_action('wp_ajax_ajax_buscar_producto_avanzado', 'ajax_buscar_producto_avanzado');
+function ajax_buscar_producto_avanzado() {
+    $termino = sanitize_text_field($_POST['termino'] ?? '');
+    if (empty($termino)) {
+        wp_send_json_error('Término de búsqueda vacío');
+    }
+
+    global $wpdb;
+
+    // Buscar productos por SKU exacto
+    $product_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_sku' AND meta_value LIKE %s",
+        '%' . $wpdb->esc_like($termino) . '%'
+    ));
+
+    // Si también quieres que busque por nombre:
+    $query = new WP_Query([
+        'post_type' => 'product',
+        'posts_per_page' => 10,
+        'post_status' => 'publish',
+        'post__in' => !empty($product_ids) ? $product_ids : [0],
+        's' => $termino // búsqueda por nombre adicional
+    ]);
+
+    $resultados = [];
+
+    while ($query->have_posts()) {
+        $query->the_post();
+        $product = wc_get_product(get_the_ID());
+
+        $resultados[] = [
+            'id' => $product->get_id(),
+            'sku' => $product->get_sku(),
+            'nombre' => $product->get_name(),
+            'precio' => $product->get_price(),
+            'stock' => $product->get_stock_quantity(),
+            'imagen' => wp_get_attachment_image_url($product->get_image_id(), 'medium'),
+            'link' => get_permalink($product->get_id())
+        ];
+    }
+
+    wp_reset_postdata();
+
+    if (empty($resultados)) {
+        wp_send_json_error('No se encontraron productos');
+    }
+
+    wp_send_json_success($resultados);
+}
+
+function ajax_buscar_cliente() {
+    // Verifica permisos si es necesario (puedes quitar esto si no estás autenticando)
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'No autorizado']);
+    }
+
+    $termino = sanitize_text_field($_POST['termino'] ?? '');
+
+    if (strlen($termino) < 2) {
+        wp_send_json_error(['message' => 'Ingresa al menos 2 caracteres']);
+    }
+
+    $args = [
+        'role' => 'customer',
+        'number' => 20,
+        'search' => "*{$termino}*",
+        'search_columns' => ['user_login', 'user_email', 'display_name']
+    ];
+
+    $clientes = get_users($args);
+    $resultados = [];
+
+    foreach ($clientes as $cliente) {
+        $resultados[] = [
+            'id' => $cliente->ID,
+            'nombre' => get_user_meta($cliente->ID, 'nombre_completo', true) ?: $cliente->display_name,
+            'correo' => $cliente->user_email,
+            'tipo_cliente' => get_user_meta($cliente->ID, 'tipo_cliente', true),
+            'credito_disponible' => get_user_meta($cliente->ID, 'credito_disponible', true),
+            'estado_credito' => get_user_meta($cliente->ID, 'estado_credito', true),
+            'canal_venta' => get_user_meta($cliente->ID, 'canal_venta', true)
+        ];
+    }
+
+    wp_send_json_success($resultados);
+}
+
 add_action('wp_ajax_buscar_autopartes_compatibles', 'buscar_autopartes_compatibles');
 add_action('wp_ajax_nopriv_buscar_autopartes_compatibles', 'buscar_autopartes_compatibles');
+
+add_action('wp_ajax_ajax_listar_clientes', 'ajax_listar_clientes');
+
+function ajax_listar_clientes() {
+    $tipo = sanitize_text_field($_POST['tipo'] ?? '');
+    $estado = sanitize_text_field($_POST['estado'] ?? '');
+
+    $args = [
+        'role' => 'customer',
+        'number' => 200,
+    ];
+
+    $users = get_users($args);
+    $resultados = [];
+
+    foreach ($users as $user) {
+        $tipo_cliente = get_user_meta($user->ID, 'tipo_cliente', true);
+        $estado_credito = get_user_meta($user->ID, 'estado_credito', true);
+
+        if ($tipo && $tipo_cliente !== $tipo) continue;
+        if ($estado && $estado_credito !== $estado) continue;
+
+        $resultados[] = [
+            'id' => $user->ID,
+            'nombre' => get_user_meta($user->ID, 'nombre_completo', true) ?: $user->display_name,
+            'correo' => $user->user_email,
+            'tipo_cliente' => $tipo_cliente,
+            'estado_credito' => $estado_credito,
+            'credito_disponible' => get_user_meta($user->ID, 'credito_disponible', true) ?: 0,
+            'canal_venta' => get_user_meta($user->ID, 'canal_venta', true) ?: ''
+        ];
+    }
+
+    wp_send_json_success($resultados);
+}
+
+add_action('wp_ajax_ajax_obtener_cliente', function () {
+    $id = intval($_POST['user_id'] ?? 0);
+    if (!$id) wp_send_json_error();
+
+    $data = [
+        'id' => $id,
+        'nombre' => get_user_meta($id, 'nombre_completo', true),
+        'tipo_cliente' => get_user_meta($id, 'tipo_cliente', true),
+        'estado_credito' => get_user_meta($id, 'estado_credito', true),
+        'credito_disponible' => get_user_meta($id, 'credito_disponible', true),
+        'dias_credito' => get_user_meta($id, 'dias_credito', true),
+        'canal_venta' => get_user_meta($id, 'canal_venta', true),
+        'oc_obligatoria' => get_user_meta($id, 'oc_obligatoria', true)
+    ];
+
+    wp_send_json_success($data);
+});
+
+add_action('wp_ajax_ajax_actualizar_cliente', function () {
+    $id = intval($_POST['user_id'] ?? 0);
+    if (!$id) wp_send_json_error();
+
+    update_user_meta($id, 'nombre_completo', sanitize_text_field($_POST['nombre'] ?? ''));
+    update_user_meta($id, 'tipo_cliente', sanitize_text_field($_POST['tipo'] ?? 'externo'));
+    update_user_meta($id, 'estado_credito', sanitize_text_field($_POST['estado_credito'] ?? 'activo'));
+    update_user_meta($id, 'credito_disponible', floatval($_POST['credito'] ?? 0));
+    update_user_meta($id, 'dias_credito', intval($_POST['dias'] ?? 0));
+    update_user_meta($id, 'canal_venta', sanitize_text_field($_POST['canal'] ?? ''));
+    update_user_meta($id, 'oc_obligatoria', intval($_POST['oc'] ?? 0));
+
+    wp_send_json_success();
+});
 
 function buscar_autopartes_compatibles() {
     $compat = sanitize_text_field($_POST['compatibilidad'] ?? '');

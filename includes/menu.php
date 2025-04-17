@@ -101,7 +101,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Impresión de Códigos QR',
         'Imprimir QR',
-        'manage_options',
+        'impresion-qr',
         'impresion-qr',
         'catalogo_autopartes_impresion_qr'
     );
@@ -144,6 +144,27 @@ function catalogo_autopartes_menu() {
         'ventas-autopartes',
         'catalogo_autopartes_ventas_autopartes'
     );
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Alta de Clientes',
+        'Alta de Clientes',
+        'manage_options',
+        'alta-clientes',
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/alta-clientes.php';
+        }
+    );
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Clientes',
+        'Clientes',
+        'manage_options',
+        'listado-clientes',
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/listado-clientes.php';
+        }
+    );
+    
 }
 
 add_action('admin_menu', 'catalogo_autopartes_menu');

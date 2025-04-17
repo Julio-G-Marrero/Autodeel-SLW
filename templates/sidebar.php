@@ -64,6 +64,15 @@ $page = $_GET['page'] ?? '';
                     </li>
                 <?php endif; ?>
 
+                <?php if (current_user_can('impresion-qr')): ?>
+                    <li>
+                        <a href="?page=impresion-qr" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'impresion-qr' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Imprimir Solicitudes
+                        </a>
+                    </li>
+                <?php endif; ?>
+
                 <?php if (current_user_can('ver_asignar_ubicaciones_qr')): ?>
                     <li>
                         <a href="?page=asignar-ubicaciones-qr" class="block px-4 py-2 rounded font-medium text-sm transition 

@@ -14,17 +14,23 @@ wp_enqueue_script('jquery');
     <div class="mb-4">
         <label for="cliente" class="block text-sm font-medium text-gray-700 mb-1">Seleccionar Cliente</label>
         <input type="text" id="cliente" placeholder="Buscar por nombre, email o ID"
-               class="w-full border-gray-300 rounded px-3 py-2 focus:ring focus:ring-blue-200" />
+        class="w-full border-gray-300 rounded px-3 py-2 focus:ring focus:ring-blue-200" />
+        <input type="hidden" id="clienteID" />
         <div id="clienteResultado" class="mt-2 text-sm text-gray-600"></div>
     </div>
 
-    <!-- Buscar producto -->
     <div class="mb-4">
-        <label for="buscarProducto" class="block text-sm font-medium text-gray-700 mb-1">Buscar Producto</label>
-        <input type="text" id="buscarProducto" placeholder="Ingresa SKU o nombre"
-               class="w-full border-gray-300 rounded px-3 py-2 focus:ring focus:ring-blue-200" />
-        <div id="resultadoBusqueda" class="mt-2"></div>
+        <label class="block text-sm font-medium mb-1">Tipo de Búsqueda de Producto</label>
+        <select id="modoBusquedaProducto" class="w-full border-gray-300 rounded px-3 py-2">
+            <option value="">Selecciona un método</option>
+            <option value="qr">Escanear QR</option>
+            <option value="sku">Buscar por SKU / Nombre</option>
+            <option value="filtro">Filtrar por Compatibilidad</option>
+        </select>
     </div>
+    <div id="contenedorBusquedaDinamica" class="mb-4"></div>
+    <div id="resultadoBusquedaProducto" class="mt-2 text-sm text-gray-600"></div>
+
 
     <!-- Productos seleccionados -->
     <div class="mb-4">
@@ -67,16 +73,48 @@ wp_enqueue_script('jquery');
 </div>
 
 <script>
+let productosSeleccionados = [];
+
 jQuery(document).ready(function($) {
-    let productosSeleccionados = [];
+    $(document).on('input', '#inputQR', function () {
+        const url = $(this).val().trim();
+        const match = url.match(/sku=([^#]+)/i);
 
-    $('#buscarProducto').on('input', function () {
-        const termino = $(this).val();
-        if (termino.length < 3) return;
+        if (!match) {
+            $('#resultadoBusquedaProducto').html('<p class="text-red-600">❌ URL no válida o sin SKU.</p>');
+            return;
+        }
 
-        // Simulación búsqueda (reemplazar con AJAX real)
-        $('#resultadoBusqueda').html(`<p class="text-blue-600">Buscando "${termino}"...</p>`);
-        // Aquí irá AJAX para buscar productos
+        const sku = match[1];
+
+        $('#resultadoBusquedaProducto').html('<p class="text-blue-600">🔎 Buscando producto por QR...</p>');
+
+        $.post(ajaxurl, {
+            action: 'ajax_buscar_producto_avanzado',
+            termino: sku
+        }, function (res) {
+            if (!res.success || res.data.length === 0) {
+                $('#resultadoBusquedaProducto').html('<p class="text-red-600">❌ No se encontraron productos.</p>');
+                return;
+            }
+
+            let html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+            res.data.forEach(p => {
+                html += `
+                    <div class="border rounded p-4 shadow bg-white">
+                        <img src="${p.imagen}" class="w-full h-32 object-contain mb-2" />
+                        <h4 class="text-sm font-bold">${p.nombre}</h4>
+                        <p class="text-sm text-gray-600">${p.sku}</p>
+                        <p class="text-sm text-green-600 font-bold">$${p.precio}</p>
+                        <button data-sku="${p.sku}" data-nombre="${p.nombre}" data-precio="${p.precio}" class="mt-2 bg-blue-600 text-white px-3 py-1 rounded agregar-producto">
+                            Agregar
+                        </button>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            $('#resultadoBusquedaProducto').html(html);
+        });
     });
 
     // Agregar función para actualizar tabla y total
@@ -123,14 +161,227 @@ jQuery(document).ready(function($) {
     // Registrar venta (simulado)
     $('#btnRegistrarVenta').on('click', function () {
         const metodo = $('#metodoPago').val();
-        const cliente = $('#cliente').val();
+        const clienteID = $('#clienteID').val();
 
-        if (!cliente || productosSeleccionados.length === 0) {
-            $('#mensajeVenta').html(`<p class="text-red-600">⚠️ Cliente y productos son obligatorios.</p>`);
+        if (!clienteID || productosSeleccionados.length === 0) {
+            $('#mensajeVenta').html(`<p class="text-red-600">⚠️ Debes seleccionar un cliente y al menos un producto.</p>`);
             return;
         }
 
+        // Aquí iría el fetch/post real con el clienteID y los productos
+
         $('#mensajeVenta').html(`<p class="text-green-600">✅ Venta registrada correctamente (simulado)</p>`);
     });
+
+    $('#cliente').on('input', function () {
+        const termino = $(this).val().trim();
+        if (termino.length < 2) return;
+
+        $('#clienteResultado').html('<p class="text-blue-600">🔍 Buscando clientes...</p>');
+
+        $.post(ajaxurl, {
+            action: 'ajax_buscar_cliente',
+            termino
+        }, function (res) {
+            if (!res.success || res.data.length === 0) {
+                $('#clienteResultado').html('<p class="text-red-600">❌ No se encontraron resultados.</p>');
+                return;
+            }
+
+            let html = '<ul class="border rounded bg-white shadow text-sm">';
+            res.data.forEach(c => {
+                html += `<li class="px-3 py-2 hover:bg-gray-100 cursor-pointer cliente-item" data-id="${c.id}" data-nombre="${c.nombre}" data-correo="${c.correo}">
+                            ${c.nombre} (${c.correo})
+                        </li>`;
+            });
+            html += '</ul>';
+
+            $('#clienteResultado').html(html);
+        });
+    });
+
+    $(document).on('click', '.cliente-item', function () {
+        const id = $(this).data('id');
+        const nombre = $(this).data('nombre');
+        const correo = $(this).data('correo');
+
+        $('#cliente').val(`${nombre} (${correo})`);
+        $('#clienteID').val(id);  // ← guardamos el ID del cliente para usarlo después
+        $('#clienteResultado').html(`<span class="text-green-600">✅ Cliente seleccionado: ${nombre}</span>`);
+    });
+
+    $('#modoBusquedaProducto').on('change', function () {
+        const modo = $(this).val();
+        const contenedor = $('#contenedorBusquedaDinamica');
+        contenedor.empty();
+
+        if (modo === 'qr') {
+            contenedor.html(`
+                <input type="text" id="inputQR" placeholder="Escanea o pega la URL del QR"
+                    class="w-full border rounded px-3 py-2" />
+                <button class="mt-2 bg-blue-600 text-white px-4 py-2 rounded" id="btnLeerQR">Activar Cámara</button>
+            `);
+        } else if (modo === 'sku') {
+            contenedor.html(`
+                <input type="text" id="inputSKU" placeholder="Ingresa SKU o descripción"
+                    class="w-full border rounded px-3 py-2" />
+            `);
+        } else if (modo === 'filtro') {
+            contenedor.html(`
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <select id="marcaFiltro" class="border rounded px-3 py-2 w-full"></select>
+                    <select id="submarcaFiltro" class="border rounded px-3 py-2 w-full"></select>
+                    <select id="anioFiltro" class="border rounded px-3 py-2 w-full">
+                        <option value="">Año</option>
+                        ${Array.from({ length: 2026 - 1990 + 1 }, (_, i) => {
+                            const year = 2026 - i;
+                            return `<option value="${year}">${year}</option>`;
+                        }).join('')}
+                    </select>
+                    <select id="categoriaFiltro" class="border rounded px-3 py-2 w-full">
+                        <option value="">Todas las categorías</option>
+                    </select>
+                </div>
+                <button id="btnBuscarCompatibilidad" class="mt-3 bg-blue-600 text-white px-4 py-2 rounded">Buscar por compatibilidad</button>
+            `);
+
+            // Precargar marcas
+            $.post(ajaxurl, { action: 'obtener_marcas' }, function (res) {
+                if (res.success) {
+                    const opciones = res.data.map(m => `<option value="${m}">${m}</option>`);
+                    $('#marcaFiltro').html('<option value="">Marca</option>' + opciones.join(''));
+                }
+            });
+
+            // Obtener categorías de productos
+            $.post(ajaxurl, { action: 'obtener_categorias_productos' }, function (res) {
+                if (res.success && res.data.length > 0) {
+                    const opciones = res.data.map(cat => `<option value="${cat.slug}">${cat.nombre}</option>`);
+                    $('#categoriaFiltro').append(opciones.join(''));
+                }
+            });
+
+            // Precargar submarcas al cambiar marca
+            $(document).on('change', '#marcaFiltro', function () {
+                const marca = $(this).val();
+                $('#submarcaFiltro').html('<option value="">Cargando...</option>');
+                $.get(ajaxurl + '?action=obtener_submarcas&marca=' + encodeURIComponent(marca), function (res) {
+                    if (res.success) {
+                        const opciones = res.data.submarcas.map(sm => `<option value="${sm}">${sm}</option>`);
+                        $('#submarcaFiltro').html('<option value="">Submarca</option>' + opciones.join(''));
+                    } else {
+                        $('#submarcaFiltro').html('<option value="">No se encontraron submarcas</option>');
+                    }
+                });
+            });
+        }
+    });
+
+    $(document).on('input', '#inputSKU', function () {
+        const termino = $(this).val().trim();
+
+        if (termino.length < 2) {
+            $('#resultadoBusquedaProducto').html('');
+            return;
+        }
+
+        $('#resultadoBusquedaProducto').html(`<p class="text-blue-600">🔎 Buscando "${termino}"...</p>`);
+
+        $.post(ajaxurl, {
+            action: 'ajax_buscar_producto_avanzado',
+            termino
+        }, function (res) {
+            if (!res.success || !res.data.length) {
+                $('#resultadoBusquedaProducto').html('<p class="text-red-600">❌ No se encontraron productos.</p>');
+                return;
+            }
+
+            let html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+            res.data.forEach(p => {
+                html += `
+                    <div class="border rounded p-4 shadow bg-white">
+                        <img src="${p.imagen}" class="w-full h-32 object-contain mb-2" />
+                        <h4 class="text-sm font-bold">${p.nombre}</h4>
+                        <p class="text-sm text-gray-600">${p.sku}</p>
+                        <p class="text-sm text-green-600 font-bold">$${p.precio}</p>
+                        <button data-sku="${p.sku}" data-nombre="${p.nombre}" data-precio="${p.precio}" class="mt-2 bg-blue-600 text-white px-3 py-1 rounded agregar-producto">
+                            Agregar
+                        </button>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            $('#resultadoBusquedaProducto').html(html);
+        });
+    });
+
+    $(document).on('click', '#btnBuscarCompatibilidad', function () {
+        const marca = $('#marcaFiltro').val().trim();
+        const submarca = $('#submarcaFiltro').val().trim();
+        const anio = $('#anioFiltro').val().trim();
+        const categoria = $('#categoriaFiltro').val().trim();
+
+        const compatibilidad = `${marca} ${submarca} ${anio}`.toUpperCase();
+
+        if (!marca || !submarca || !anio) {
+            $('#resultadoBusquedaProducto').html('<p class="text-red-600">Todos los campos son obligatorios.</p>');
+            return;
+        }
+
+        $('#resultadoBusquedaProducto').html('<p class="text-blue-600">🔎 Buscando productos compatibles...</p>');
+
+        $.post(ajaxurl, {
+            action: 'ajax_buscar_productos_compatibles',
+            compatibilidad,
+            categoria
+        }, function (res) {
+            if (!res.success || res.data.length === 0) {
+                $('#resultadoBusquedaProducto').html('<p class="text-red-600">❌ No se encontraron productos.</p>');
+                return;
+            }
+
+            let html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+            res.data.forEach(p => {
+                html += `
+                    <div class="border rounded p-4 shadow bg-white">
+                        <img src="${p.imagen}" class="w-full h-32 object-contain mb-2" />
+                        <h4 class="text-sm font-bold">${p.nombre}</h4>
+                        <p class="text-sm text-gray-600">${p.sku}</p>
+                        <p class="text-sm text-green-600 font-bold">$${p.precio}</p>
+                        <button data-sku="${p.sku}" data-nombre="${p.nombre}" data-precio="${p.precio}" class="mt-2 bg-blue-600 text-white px-3 py-1 rounded agregar-producto">
+                            Agregar
+                        </button>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            $('#resultadoBusquedaProducto').html(html);
+        });
+    });
+
+    $(document).on('click', '.agregar-producto', function () {
+        const sku = $(this).data('sku');
+        const nombre = $(this).data('nombre');
+        const precio = parseFloat($(this).data('precio'));
+
+        // Verifica si ya está agregado
+        const yaExiste = productosSeleccionados.find(p => p.sku === sku);
+        if (yaExiste) {
+            Swal.fire('Ya agregado', 'Este producto ya está en la venta.', 'info');
+            return;
+        }
+
+        productosSeleccionados.push({
+            sku,
+            nombre,
+            precio,
+            cantidad: 1
+        });
+
+        actualizarTabla();
+    });
+
 });
+
 </script>

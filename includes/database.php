@@ -102,7 +102,7 @@ function catalogo_autopartes_crear_tablas() {
     global $wpdb;
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
-    global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios;
+    global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_ventas;
 
     dbDelta($sql_catalogos);
     dbDelta($sql_autopartes);
@@ -110,7 +110,7 @@ function catalogo_autopartes_crear_tablas() {
     dbDelta($sql_ubicaciones);
     dbDelta($sql_solicitudes);
     dbDelta($sql_precios);
-    dbDelta($sql_ventas);
+    dbDelta($sql_ventas); // ✅ Ya no dará warning
 }
 
 // Función para eliminar las tablas cuando se desinstala el plugin
