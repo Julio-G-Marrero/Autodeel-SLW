@@ -950,40 +950,64 @@ function ajax_buscar_producto_avanzado() {
     }
 
     global $wpdb;
+    $resultados = [];
 
-    // Buscar productos por SKU exacto
+    // 1. Buscar por SKU exacto o parcial
     $product_ids = $wpdb->get_col($wpdb->prepare(
         "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_sku' AND meta_value LIKE %s",
         '%' . $wpdb->esc_like($termino) . '%'
     ));
 
-    // Si también quieres que busque por nombre:
-    $query = new WP_Query([
-        'post_type' => 'product',
-        'posts_per_page' => 10,
-        'post_status' => 'publish',
-        'post__in' => !empty($product_ids) ? $product_ids : [0],
-        's' => $termino // búsqueda por nombre adicional
-    ]);
+    if (!empty($product_ids)) {
+        $sku_query = new WP_Query([
+            'post_type' => 'product',
+            'post_status' => 'publish',
+            'post__in' => $product_ids,
+            'posts_per_page' => 10,
+        ]);
 
-    $resultados = [];
+        while ($sku_query->have_posts()) {
+            $sku_query->the_post();
+            $product = wc_get_product(get_the_ID());
 
-    while ($query->have_posts()) {
-        $query->the_post();
-        $product = wc_get_product(get_the_ID());
-
-        $resultados[] = [
-            'id' => $product->get_id(),
-            'sku' => $product->get_sku(),
-            'nombre' => $product->get_name(),
-            'precio' => $product->get_price(),
-            'stock' => $product->get_stock_quantity(),
-            'imagen' => wp_get_attachment_image_url($product->get_image_id(), 'medium'),
-            'link' => get_permalink($product->get_id())
-        ];
+            $resultados[] = [
+                'id' => $product->get_id(),
+                'sku' => $product->get_sku(),
+                'nombre' => $product->get_name(),
+                'precio' => $product->get_price(),
+                'stock' => $product->get_stock_quantity(),
+                'imagen' => wp_get_attachment_image_url($product->get_image_id(), 'medium'),
+                'link' => get_permalink($product->get_id())
+            ];
+        }
+        wp_reset_postdata();
     }
 
-    wp_reset_postdata();
+    // 2. Si no encontró por SKU, intenta por nombre
+    if (empty($resultados)) {
+        $name_query = new WP_Query([
+            'post_type' => 'product',
+            'post_status' => 'publish',
+            'posts_per_page' => 10,
+            's' => $termino,
+        ]);
+
+        while ($name_query->have_posts()) {
+            $name_query->the_post();
+            $product = wc_get_product(get_the_ID());
+
+            $resultados[] = [
+                'id' => $product->get_id(),
+                'sku' => $product->get_sku(),
+                'nombre' => $product->get_name(),
+                'precio' => $product->get_price(),
+                'stock' => $product->get_stock_quantity(),
+                'imagen' => wp_get_attachment_image_url($product->get_image_id(), 'medium'),
+                'link' => get_permalink($product->get_id())
+            ];
+        }
+        wp_reset_postdata();
+    }
 
     if (empty($resultados)) {
         wp_send_json_error('No se encontraron productos');
