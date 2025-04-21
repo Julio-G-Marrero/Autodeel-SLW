@@ -507,6 +507,37 @@ add_action('wp_ajax_obtener_precio_por_sku', function () {
 
     wp_send_json_success($resultado);
 });
+//Endpoint para registrar venta
+function ajax_registrar_venta_autopartes() {
+    $cliente_id = intval($_POST['cliente_id']);
+    $metodo_pago = sanitize_text_field($_POST['metodo_pago']);
+    $productos = json_decode(stripslashes($_POST['productos']), true);
+
+    if (!$cliente_id || empty($productos)) {
+        wp_send_json_error(['message' => 'Datos incompletos']);
+    }
+
+    // TODO: Validar crédito, stock, OC si aplica...
+
+    // Simulación de registro
+    $venta_id = wp_insert_post([
+        'post_type' => 'venta_autoparte',
+        'post_status' => 'publish',
+        'post_title' => 'Venta a cliente ' . $cliente_id,
+        'meta_input' => [
+            'cliente_id' => $cliente_id,
+            'metodo_pago' => $metodo_pago,
+            'productos' => $productos
+        ]
+    ]);
+
+    if ($venta_id) {
+        wp_send_json_success(['venta_id' => $venta_id]);
+    } else {
+        wp_send_json_error(['message' => 'Error al guardar venta']);
+    }
+}
+add_action('wp_ajax_ajax_registrar_venta_autopartes', 'ajax_registrar_venta_autopartes');
 
 // Endpoint AJAX: asignar producto escaneado a la ubicación activa
 add_action('wp_ajax_asignar_producto_a_ubicacion', function () {
