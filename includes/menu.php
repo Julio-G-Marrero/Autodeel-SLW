@@ -45,15 +45,6 @@ function catalogo_autopartes_menu() {
 
     add_submenu_page(
         'catalogo-autopartes',
-        'Gestión de Cajas',
-        'Gestión de Cajas',
-        'manage_options',
-        'gestion-cajas',
-        'catalogo_autopartes_gestion_cajas'
-    );
-
-    add_submenu_page(
-        'catalogo-autopartes',
         'Reportes',
         'Reportes',
         'manage_options',
@@ -140,7 +131,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Ventas de Autopartes',
         'Ventas de Autopartes',
-        'manage_options',
+        'punto_de_venta',
         'ventas-autopartes',
         'catalogo_autopartes_ventas_autopartes'
     );
@@ -148,7 +139,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Alta de Clientes',
         'Alta de Clientes',
-        'manage_options',
+        'alta_clientes_nuevos',
         'alta-clientes',
         function () {
             include plugin_dir_path(__FILE__) . '../pages/alta-clientes.php';
@@ -158,16 +149,77 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Clientes',
         'Clientes',
-        'manage_options',
+        'gestion_clientes',
         'listado-clientes',
         function () {
             include plugin_dir_path(__FILE__) . '../pages/listado-clientes.php';
         }
     );
-    
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Cuentas por Cobrar',
+        'Cuentas por Cobrar',
+        'gestion_cuentas_cobrar',
+        'cuentas-por-cobrar',
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/cuentas-por-cobrar.php';
+        }
+    );
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Gestion de Cajas',
+        'Gestion de Cajas',
+        'gestion_de_cajas',
+        'gestion-cajas',
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/apertura-caja.php';
+        }
+    );
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Resumen de Ventas',  
+        'Resumen Ventas',      
+        'ver_resumen_ventas',      
+        'resumen-ventas', 
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/resumen-ventas.php';
+        }
+    );
+    add_submenu_page(
+        'catalogo-autopartes',                    
+        'Resumen de Cortes',                      
+        'Resumen de Cortes',                      
+        'manage_options',                         
+        'resumen-cortes',                        
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/resumen-cortes.php';
+        }
+    );
 }
 
 add_action('admin_menu', 'catalogo_autopartes_menu');
+
+function catalogo_autopartes_register_caps() {
+    $caps = [
+        'ver_captura_productos',
+        'ver_solicitudes',
+        'impresion-qr',
+        'asignar_precio_autopartes',
+        'punto_de_venta',
+        'alta_clientes_nuevos',
+        'gestion_clientes',
+        'gestion_cuentas_cobrar',
+        'gestion_de_cajas',
+        'ver_resumen_ventas',
+        'ver_asignar_ubicaciones_qr'
+    ];
+
+    $admin = get_role('administrator');
+    foreach ($caps as $cap) {
+        $admin->add_cap($cap); // ✅ El admin tendrá acceso a todo
+    }
+}
+register_activation_hook(__FILE__, 'catalogo_autopartes_register_caps');
 
 // Funciones para cargar cada página del plugin
 function catalogo_autopartes_dashboard() {
@@ -188,10 +240,6 @@ function catalogo_autopartes_captura_productos() {
 
 function catalogo_autopartes_punto_venta() {
     include_once plugin_dir_path(__FILE__) . '../pages/punto-venta.php';
-}
-
-function catalogo_autopartes_gestion_cajas() {
-    include_once plugin_dir_path(__FILE__) . '../pages/gestion-cajas.php';
 }
 
 function catalogo_autopartes_reportes() {

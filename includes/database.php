@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) {
 }
 
 global $wpdb;
-global $sql_catalogos, $sql_autopartes,$sql_ventas, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios;
+global $sql_catalogos, $sql_autopartes,$sql_ventas, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_cxc,$sql_pagos, $sql_cajas, $sql_movimientos_caja, $sql_apertura_caja;
 $charset_collate = $wpdb->get_charset_collate();
 
 // Tabla de Precios por Catálogo (RADEC, etc.)
@@ -71,13 +71,14 @@ $sql_ventas = "CREATE TABLE {$wpdb->prefix}ventas_autopartes (
     id BIGINT NOT NULL AUTO_INCREMENT,
     cliente_id BIGINT NOT NULL,
     vendedor_id BIGINT NOT NULL,
-    productos LONGTEXT NOT NULL, -- JSON con ID, título, cantidad, precio
+    solicitud_id BIGINT DEFAULT NULL,
+    productos LONGTEXT NOT NULL,
     total DECIMAL(10,2) NOT NULL,
     metodo_pago VARCHAR(50) NOT NULL,
     canal_venta VARCHAR(50) DEFAULT 'interno',
     tipo_cliente VARCHAR(50) DEFAULT 'externo',
     credito_usado DECIMAL(10,2) DEFAULT 0,
-    oc_folio VARCHAR(100) DEFAULT NULL,
+    oc_folio TEXT DEFAULT NULL,
     estado_pago ENUM('pagado', 'pendiente', 'vencido') DEFAULT 'pendiente',
     fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
@@ -97,12 +98,87 @@ $sql_solicitudes = "CREATE TABLE {$wpdb->prefix}solicitudes_piezas (
     PRIMARY KEY (id)
 ) $charset_collate;";
 
+$sql_cxc = "CREATE TABLE {$wpdb->prefix}cuentas_cobrar (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    venta_id BIGINT NOT NULL,
+    cliente_id BIGINT NOT NULL,
+    vendedor_id BIGINT NOT NULL,
+    monto_total DECIMAL(10,2) NOT NULL,
+    monto_pagado DECIMAL(10,2) DEFAULT 0,
+    saldo_pendiente DECIMAL(10,2) NOT NULL,
+    fecha_limite_pago DATE NOT NULL,
+    estado ENUM('pendiente', 'pagado', 'vencido', 'bloqueado') DEFAULT 'pendiente',
+    fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+    orden_compra_url TEXT DEFAULT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY venta_unica (venta_id)
+) {$charset_collate};";
+
+$sql_pagos = "CREATE TABLE {$wpdb->prefix}pagos_cxc (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    cuenta_id BIGINT NOT NULL,
+    monto_pagado DECIMAL(10,2) NOT NULL,
+    metodo_pago VARCHAR(50) DEFAULT 'efectivo',
+    fecha_pago DATETIME DEFAULT CURRENT_TIMESTAMP,
+    notas TEXT DEFAULT NULL,
+    comprobante_url TEXT DEFAULT NULL,
+    PRIMARY KEY (id),
+    KEY idx_cuenta_id (cuenta_id)
+) $charset_collate;";
+
+$sql_cajas = "CREATE TABLE {$wpdb->prefix}cajas (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    usuario_id BIGINT NOT NULL,
+    monto_apertura DECIMAL(10,2) NOT NULL,
+    fecha_apertura DATETIME DEFAULT CURRENT_TIMESTAMP,
+    monto_cierre DECIMAL(10,2) DEFAULT NULL,
+    fecha_cierre DATETIME DEFAULT NULL,
+    observaciones_apertura TEXT DEFAULT NULL,
+    observaciones_cierre TEXT DEFAULT NULL,
+    estado ENUM('abierta', 'cerrada') DEFAULT 'abierta',
+    PRIMARY KEY (id)
+) $charset_collate;";
+
+$sql_movimientos_caja = "CREATE TABLE {$wpdb->prefix}movimientos_caja (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    caja_id BIGINT NOT NULL,
+    tipo ENUM('venta', 'pago', 'otro') DEFAULT 'venta',
+    referencia_id BIGINT DEFAULT NULL, 
+    metodo_pago VARCHAR(50) NOT NULL,
+    monto DECIMAL(10,2) NOT NULL,
+    descripcion TEXT DEFAULT NULL,
+    fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY caja_idx (caja_id)
+) $charset_collate;";
+
+$sql_apertura_caja = "CREATE TABLE {$wpdb->prefix}aperturas_caja (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    usuario_id BIGINT NOT NULL,
+    monto_inicial DECIMAL(10,2) NOT NULL,
+    detalle_apertura LONGTEXT DEFAULT NULL,      
+    detalle_cierre LONGTEXT DEFAULT NULL,       
+    total_cierre DECIMAL(10,2) DEFAULT NULL,    
+    diferencia DECIMAL(10,2) DEFAULT NULL,      
+    fecha_apertura DATETIME DEFAULT CURRENT_TIMESTAMP,
+    fecha_cierre DATETIME DEFAULT NULL,
+    estado ENUM('abierta', 'cerrada') DEFAULT 'abierta',
+    notas TEXT DEFAULT NULL,
+    vobo_aprobado TINYINT(1) DEFAULT 0,
+    vobo_aprobado_por BIGINT DEFAULT NULL,
+    vobo_fecha_aprobacion DATETIME DEFAULT NULL,
+    PRIMARY KEY (id),
+    INDEX idx_usuario_id (usuario_id),
+    INDEX idx_estado (estado)
+) $charset_collate;";
+
+
 // Función para crear todas las tablas
 function catalogo_autopartes_crear_tablas() {
     global $wpdb;
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
-    global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_ventas;
+    global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_ventas, $sql_cxc, $sql_pagos, $sql_cajas,$sql_movimientos_caja, $sql_apertura_caja;
 
     dbDelta($sql_catalogos);
     dbDelta($sql_autopartes);
@@ -110,7 +186,12 @@ function catalogo_autopartes_crear_tablas() {
     dbDelta($sql_ubicaciones);
     dbDelta($sql_solicitudes);
     dbDelta($sql_precios);
-    dbDelta($sql_ventas); // ✅ Ya no dará warning
+    dbDelta($sql_ventas);
+    dbDelta($sql_cxc);
+    dbDelta($sql_pagos);
+    dbDelta($sql_cajas);
+    dbDelta($sql_movimientos_caja);
+    dbDelta($sql_apertura_caja);
 }
 
 // Función para eliminar las tablas cuando se desinstala el plugin
@@ -123,6 +204,9 @@ function catalogo_autopartes_eliminar_tablas() {
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "catalogos_refaccionarias");
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "precios_catalogos");
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "ventas_autopartes");
+    $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "cuentas_cobrar");
+    $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "cajas");
+    $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "aperturas_caja");
 }
 
 // Función para buscar coincidencias en los catálogos

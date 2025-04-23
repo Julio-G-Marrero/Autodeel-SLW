@@ -90,6 +90,46 @@ $page = $_GET['page'] ?? '';
                         </a>
                     </li>
                 <?php endif; ?>
+                <?php if (current_user_can('punto_de_venta')): ?>
+                    <li>
+                        <a href="?page=ventas-autopartes" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'ventas-autopartes' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Asignar Precios
+                        </a>
+                    </li>
+                <?php endif; ?>
+                <?php if (current_user_can('gestion_de_cajas')): ?>
+                    <li>
+                        <a href="?page=apertura-caja" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'apertura-caja' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Asignar Precios
+                        </a>
+                    </li>
+                <?php endif; ?>
+                <?php if (current_user_can('ver_resumen_ventas')): ?>
+                    <li>
+                        <a href="?page=resumen-ventas" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'resumen-ventas' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Asignar Precios
+                        </a>
+                    </li>
+                <?php endif; ?>
+                <?php if (current_user_can('gestion_clientes')): ?>
+                    <li>
+                        <a href="?page=listado-clientes" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'listado-clientes' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Asignar Precios
+                        </a>
+                    </li>
+                <?php endif; ?>
+                <?php if (current_user_can('alta_clientes_nuevos')): ?>
+                    <li>
+                        <a href="?page=alta-clientes" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'alta-clientes' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Asignar Precios
+                        </a>
+                    </li>
+                <?php endif; ?>
             </ul>
         </nav>
     </div>
