@@ -1,6 +1,7 @@
 <?php
 if (!defined('ABSPATH')) exit;
-
+include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
 wp_enqueue_style('tailwindcdn', 'https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css');
 wp_enqueue_script('jquery');
 wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', [], null, true);

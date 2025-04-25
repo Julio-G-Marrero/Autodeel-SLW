@@ -576,6 +576,72 @@ function ajax_registrar_venta_autopartes() {
     }
 
     $venta_id = $wpdb->insert_id;
+    
+    // Crear pedido de WooCommerce
+    $order = wc_create_order([
+        'customer_id' => $cliente_id,
+    ]);
+    $cliente_userdata = get_userdata($cliente_id);
+    if (!$cliente_userdata || !isset($cliente_userdata->user_email)) {
+        wp_send_json_error(['message' => 'No se pudo obtener el correo del cliente.']);
+    }
+    // Asignar datos de facturación al pedido
+    $order->set_billing_first_name(get_user_meta($cliente_id, 'nombre_completo', true));
+    $order->set_billing_phone(get_user_meta($cliente_id, 'telefono', true));
+    $order->set_billing_email($cliente_userdata->user_email);
+
+    // Datos fiscales (si los tiene)
+    $order->set_billing_company(get_user_meta($cliente_id, 'razon_social', true));
+    $order->set_billing_address_1(get_user_meta($cliente_id, 'fact_calle', true));
+    $order->set_billing_address_2(get_user_meta($cliente_id, 'fact_colonia', true));
+    $order->set_billing_city(get_user_meta($cliente_id, 'fact_municipio', true));
+    $order->set_billing_state(get_user_meta($cliente_id, 'fact_estado', true));
+    $order->set_billing_postcode(get_user_meta($cliente_id, 'fact_cp', true));
+    $order->set_billing_country(get_user_meta($cliente_id, 'fact_pais', true));
+
+    // Guardar también datos fiscales personalizados como metadatos (opcional)
+    update_post_meta($order->get_id(), '_rfc', get_user_meta($cliente_id, 'rfc', true));
+    update_post_meta($order->get_id(), '_uso_cfdi', get_user_meta($cliente_id, 'uso_cfdi', true));
+    update_post_meta($order->get_id(), '_regimen_fiscal', get_user_meta($cliente_id, 'regimen_fiscal', true));
+
+    foreach ($productos as $p) {
+        $product_id = wc_get_product_id_by_sku($p['sku']);
+        if ($product_id) {
+            $order->add_product(wc_get_product($product_id), intval($p['cantidad']));
+        }
+    }
+
+    // Mapear método de pago WooCommerce
+    $metodo_wc = match($metodo_pago) {
+        'efectivo'       => 'cod',
+        'transferencia'  => 'bacs',
+        'tarjeta'        => 'manual',  // puede ser stripe si lo tienes
+        'credito'        => 'manual',  // pago manual con seguimiento
+        default          => 'manual',
+    };
+
+    $order->set_payment_method($metodo_wc);
+    $order->set_payment_method_title(ucfirst($metodo_pago));
+
+    // Cambiar estado del pedido según lógica de tu POS
+    $order->update_status('processing');
+
+    // Guardar metadatos adicionales
+    update_post_meta($order->get_id(), '_venta_autoparte_id', $venta_id);
+    update_post_meta($order->get_id(), '_canal_venta', $canal_venta);
+    update_post_meta($order->get_id(), '_tipo_cliente', $tipo_cliente);
+    update_post_meta($order->get_id(), '_metodo_pago', $metodo_pago);
+    update_post_meta($order->get_id(), '_estado_pago', $estado_pago);
+    update_post_meta($order->get_id(), '_oc_url', $oc_url);
+    update_post_meta($order->get_id(), '_estado_logistico', 'pendiente_armado');
+
+    $order->calculate_totals();
+    $order->save();
+
+    // Relacionar pedido con la venta personalizada
+    $wpdb->update("{$wpdb->prefix}ventas_autopartes", [
+        'woo_order_id' => $order->get_id()
+    ], ['id' => $venta_id]);
 
     // Insertar en cuentas por cobrar si fue a crédito
     if ($estado_pago === 'pendiente') {
@@ -623,6 +689,65 @@ function ajax_registrar_venta_autopartes() {
     }
 
     wp_send_json_success(['venta_id' => $venta_id]);
+}
+
+add_action('wp_ajax_ajax_obtener_pedidos', 'ajax_obtener_pedidos');
+function ajax_obtener_pedidos() {
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'No tienes permisos para ver los pedidos.']);
+    }
+
+    $estado = isset($_POST['estado']) ? sanitize_text_field($_POST['estado']) : '';
+    $cliente_id = isset($_POST['cliente_id']) ? intval($_POST['cliente_id']) : 0;
+
+    $args = [
+        'limit'   => 50,
+        'orderby' => 'date',
+        'order'   => 'DESC',
+        'status'  => $estado ? [$estado] : ['pending', 'processing', 'on-hold', 'completed'],
+    ];
+
+    if ($cliente_id) {
+        $args['customer_id'] = $cliente_id;
+    }
+
+    $query = new WC_Order_Query($args);
+    $pedidos = $query->get_orders();
+    $resultado = [];
+
+    foreach ($pedidos as $pedido) {
+        /** @var WC_Order $pedido */
+        $woo_order_id = $pedido->get_id();
+
+        // 🔁 Verifica si hay datos de facturación, si no, usa el usuario del pedido
+        $cliente = trim($pedido->get_billing_first_name() . ' ' . $pedido->get_billing_last_name());
+        if (empty($cliente)) {
+            $user_id = $pedido->get_customer_id();
+            $user = $user_id ? get_user_by('id', $user_id) : null;
+            $cliente = $user ? $user->display_name : 'Desconocido';
+        }
+
+        $estado_pedido = wc_get_order_status_name($pedido->get_status());
+        $fecha = $pedido->get_date_created() ? $pedido->get_date_created()->format('Y-m-d H:i') : '';
+        $total = $pedido->get_total();
+        $canal = get_post_meta($woo_order_id, '_canal_venta', true) ?: 'WooCommerce';
+        $tipo_cliente = get_post_meta($woo_order_id, '_tipo_cliente', true) ?: 'externo';
+        $metodo_pago = get_post_meta($woo_order_id, '_metodo_pago', true) ?: $pedido->get_payment_method_title();
+
+        $resultado[] = [
+            'id'            => $woo_order_id,
+            'cliente'       => $cliente,
+            'estado'        => $estado_pedido,
+            'fecha'         => $fecha,
+            'total'         => number_format($total, 2),
+            'canal'         => $canal,
+            'tipo_cliente'  => ucfirst($tipo_cliente),
+            'metodo_pago'   => $metodo_pago,
+            'ver_url'       => admin_url("post.php?post={$woo_order_id}&action=edit"),
+        ];
+    }
+
+    wp_send_json_success($resultado);
 }
 
 add_action('wp_ajax_ajax_obtener_resumen_ventas', function () {
@@ -2090,7 +2215,15 @@ add_action('after_setup_theme', function () {
 // Oculta la sidebar del admin para roles personalizados (capturista y gestor de solicitudes)
 add_action('admin_head', 'ocultar_sidebar_para_roles_personalizados');
 function ocultar_sidebar_para_roles_personalizados() {
-    if (current_user_can('rol_capturista') || current_user_can('rol_solicitudes')) {
+    // Evita aplicar estilos si es administrador
+    if (current_user_can('administrator')) return;
+
+    // Aplica estilos solo si el usuario tiene alguno de los roles personalizados
+    if (
+        current_user_can('rol_capturista') ||
+        current_user_can('rol_solicitudes') ||
+        current_user_can('punto_de_venta')
+    ) {
         echo '<style>
             #adminmenu, #adminmenuback, #adminmenuwrap,
             .update-nag, #screen-meta, #wpfooter {
@@ -2102,7 +2235,6 @@ function ocultar_sidebar_para_roles_personalizados() {
         </style>';
     }
 }
-
 // Oculta el admin bar (barra negra superior) en frontend y backend
 add_action('admin_head', 'ocultar_wpadminbar_con_css');
 add_action('wp_head', 'ocultar_wpadminbar_con_css');
@@ -2148,6 +2280,10 @@ function woocommerce_redireccion_personalizada($redirect, $user) {
 
     if (in_array('rol_solicitudes', $roles)) {
         return admin_url('admin.php?page=solicitudes-autopartes');
+    }
+
+    if (in_array('punto_de_venta', $roles)) {
+        return admin_url('admin.php?page=ventas-autopartes');
     }
 
     return $redirect;

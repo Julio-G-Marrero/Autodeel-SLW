@@ -195,6 +195,24 @@ function catalogo_autopartes_menu() {
             include plugin_dir_path(__FILE__) . '../pages/resumen-cortes.php';
         }
     );
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Gestión de Pedidos',
+        'Gestión de Pedidos',
+        'manage_options',
+        'gestion-pedidos',
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/gestion-pedidos.php';
+        }
+    );
+    add_submenu_page(
+        null, // no aparece en el menú
+        'Detalle del Pedido',
+        'Detalle del Pedido',
+        'manage_woocommerce', // o tu rol personalizado
+        'detalle-pedido',
+        'catalogo_autopartes_detalle_pedido'
+    );
 }
 
 add_action('admin_menu', 'catalogo_autopartes_menu');
@@ -270,4 +288,19 @@ function catalogo_autopartes_listas_precios() {
     include_once plugin_dir_path(__FILE__) . '../pages/listas-precios.php';
 }
 
+function catalogo_autopartes_detalle_pedido() {
+    $pedido_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+    if (!$pedido_id) {
+        echo '<div class="notice notice-error"><p>❌ Pedido no válido.</p></div>';
+        return;
+    }
+
+    $order = wc_get_order($pedido_id);
+    if (!$order) {
+        echo '<div class="notice notice-error"><p>❌ No se encontró el pedido.</p></div>';
+        return;
+    }
+
+    include plugin_dir_path(__FILE__) . '../pages/detalle-pedido.php';
+}
 ?>

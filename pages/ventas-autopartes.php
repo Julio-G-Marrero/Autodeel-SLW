@@ -2,7 +2,8 @@
 if (!defined('ABSPATH')) {
     exit;
 }
-
+include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
 wp_enqueue_style('tailwindcdn', 'https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css');
 wp_enqueue_script('jquery');
 wp_enqueue_script('html5-qrcode', 'https://unpkg.com/html5-qrcode', [], null, true);

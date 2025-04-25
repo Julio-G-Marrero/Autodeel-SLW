@@ -72,6 +72,7 @@ $sql_ventas = "CREATE TABLE {$wpdb->prefix}ventas_autopartes (
     cliente_id BIGINT NOT NULL,
     vendedor_id BIGINT NOT NULL,
     solicitud_id BIGINT DEFAULT NULL,
+    woo_order_id BIGINT DEFAULT NULL,
     productos LONGTEXT NOT NULL,
     total DECIMAL(10,2) NOT NULL,
     metodo_pago VARCHAR(50) NOT NULL,
@@ -81,7 +82,10 @@ $sql_ventas = "CREATE TABLE {$wpdb->prefix}ventas_autopartes (
     oc_folio TEXT DEFAULT NULL,
     estado_pago ENUM('pagado', 'pendiente', 'vencido') DEFAULT 'pendiente',
     fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    KEY idx_cliente_id (cliente_id),
+    KEY idx_vendedor_id (vendedor_id),
+    KEY idx_woo_order_id (woo_order_id)
 ) $charset_collate;";
 
 // Tabla de Solicitudes
