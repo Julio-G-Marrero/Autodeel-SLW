@@ -104,9 +104,10 @@ $sql_solicitudes = "CREATE TABLE {$wpdb->prefix}solicitudes_piezas (
 
 $sql_cxc = "CREATE TABLE {$wpdb->prefix}cuentas_cobrar (
     id BIGINT NOT NULL AUTO_INCREMENT,
-    venta_id BIGINT NOT NULL,
+    venta_id BIGINT DEFAULT NULL,
+    order_id BIGINT DEFAULT NULL,
     cliente_id BIGINT NOT NULL,
-    vendedor_id BIGINT NOT NULL,
+    vendedor_id BIGINT DEFAULT 0,
     monto_total DECIMAL(10,2) NOT NULL,
     monto_pagado DECIMAL(10,2) DEFAULT 0,
     saldo_pendiente DECIMAL(10,2) NOT NULL,
@@ -115,7 +116,7 @@ $sql_cxc = "CREATE TABLE {$wpdb->prefix}cuentas_cobrar (
     fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
     orden_compra_url TEXT DEFAULT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY venta_unica (venta_id)
+    UNIQUE KEY venta_order_unique (venta_id, order_id)
 ) {$charset_collate};";
 
 $sql_pagos = "CREATE TABLE {$wpdb->prefix}pagos_cxc (

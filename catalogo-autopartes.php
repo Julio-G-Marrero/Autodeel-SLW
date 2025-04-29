@@ -509,12 +509,22 @@ add_action('wp_ajax_obtener_precio_por_sku', function () {
         $wpdb->prepare("SELECT catalogo, precio_proveedor, precio_publico FROM $tabla WHERE sku_base = %s", $sku)
     );
 
-    wp_send_json_success($resultado);
+    // Aplicar IVA (16%) a cada precio
+    $resultado_con_iva = array_map(function($fila) {
+        $fila->precio_proveedor = round($fila->precio_proveedor * 1.16, 2);
+        $fila->precio_publico = round($fila->precio_publico * 1.16, 2);
+        return $fila;
+    }, $resultado);
+
+    wp_send_json_success($resultado_con_iva);
 });
+
 //Endpoint para registrar venta
 add_action('wp_ajax_ajax_registrar_venta_autopartes', 'ajax_registrar_venta_autopartes');
 function ajax_registrar_venta_autopartes() {
     global $wpdb;
+
+    // 🛡️ Sanitizar y validar inputs
     $cliente_id     = intval($_POST['cliente_id']);
     $vendedor_id    = get_current_user_id();
     $metodo_pago    = sanitize_text_field($_POST['metodo_pago']);
@@ -523,39 +533,35 @@ function ajax_registrar_venta_autopartes() {
     $tipo_cliente   = sanitize_text_field($_POST['tipo_cliente'] ?? 'externo');
     $credito_usado  = floatval($_POST['credito_usado'] ?? 0);
     $oc_obligatoria = sanitize_text_field($_POST['oc_obligatoria'] ?? 'no');
-    $solicitud_id   = intval($_POST['solicitud_id'] ?? 0);
     $estado_pago    = $metodo_pago === 'credito' ? 'pendiente' : 'pagado';
 
     if (!$cliente_id || empty($productos)) {
         wp_send_json_error(['message' => 'Faltan datos del cliente o productos']);
     }
 
-    // Subida de orden de compra si aplica
+    // 🎯 Subir Orden de Compra si aplica
     $oc_url = null;
-    if (($oc_obligatoria === 'si' || $oc_obligatoria === '1') && isset($_FILES['orden_compra']) && !empty($_FILES['orden_compra']['name'])) {
-        require_once ABSPATH . 'wp-admin/includes/image.php';
+    if (($oc_obligatoria === 'si' || $oc_obligatoria === '1') && !empty($_FILES['orden_compra']['name'])) {
         require_once ABSPATH . 'wp-admin/includes/file.php';
         require_once ABSPATH . 'wp-admin/includes/media.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
 
         $attachment_id = media_handle_upload('orden_compra', 0);
-        if (is_wp_error($attachment_id)) {
-            wp_send_json_error(['message' => 'Error al guardar la orden de compra en la biblioteca de medios.']);
+        if (!is_wp_error($attachment_id)) {
+            $oc_url = wp_get_attachment_url($attachment_id);
+            error_log("📎 Orden de compra subida exitosamente: $oc_url");
+        } else {
+            wp_send_json_error(['message' => 'Error al subir la orden de compra.']);
         }
-
-        $oc_url = wp_get_attachment_url($attachment_id);
-
-        // Log temporal para depuración (puedes quitar esto después de probar)
-        error_log("📎 Orden de compra guardada en: $oc_url");
     }
 
-    // Calcular total
-    $total = 0;
-    foreach ($productos as $p) {
-        $total += floatval($p['precio']) * intval($p['cantidad']);
-    }
+    // 🎯 Calcular total
+    $total = array_reduce($productos, function($carry, $p) {
+        return $carry + (floatval($p['precio']) * intval($p['cantidad']));
+    }, 0);
 
-    // Insertar venta
-    $insertado = $wpdb->insert("{$wpdb->prefix}ventas_autopartes", [
+    // 🧩 Insertar Venta en `ventas_autopartes`
+    $venta_insertada = $wpdb->insert("{$wpdb->prefix}ventas_autopartes", [
         'cliente_id'     => $cliente_id,
         'vendedor_id'    => $vendedor_id,
         'productos'      => wp_json_encode($productos),
@@ -566,31 +572,27 @@ function ajax_registrar_venta_autopartes() {
         'credito_usado'  => $credito_usado,
         'oc_folio'       => $oc_url,
         'estado_pago'    => $estado_pago
-    ], [
-        '%d','%d','%s','%f','%s','%s','%f','%s','%s'
-    ]);
+    ], ['%d','%d','%s','%f','%s','%s','%f','%s','%s']);
 
-    if ($insertado === false) {
+    if ($venta_insertada === false) {
         error_log("❌ Error al insertar venta: " . $wpdb->last_error);
-        wp_send_json_error(['message' => 'No se pudo registrar la venta']);
+        wp_send_json_error(['message' => 'Error al registrar la venta']);
     }
 
     $venta_id = $wpdb->insert_id;
-    
-    // Crear pedido de WooCommerce
-    $order = wc_create_order([
-        'customer_id' => $cliente_id,
-    ]);
+
+    // 🧩 Crear Pedido en WooCommerce
+    $order = wc_create_order(['customer_id' => $cliente_id]);
     $cliente_userdata = get_userdata($cliente_id);
-    if (!$cliente_userdata || !isset($cliente_userdata->user_email)) {
-        wp_send_json_error(['message' => 'No se pudo obtener el correo del cliente.']);
+
+    if (!$cliente_userdata) {
+        wp_send_json_error(['message' => 'No se pudo obtener los datos del cliente.']);
     }
-    // Asignar datos de facturación al pedido
+
     $order->set_billing_first_name(get_user_meta($cliente_id, 'nombre_completo', true));
     $order->set_billing_phone(get_user_meta($cliente_id, 'telefono', true));
     $order->set_billing_email($cliente_userdata->user_email);
 
-    // Datos fiscales (si los tiene)
     $order->set_billing_company(get_user_meta($cliente_id, 'razon_social', true));
     $order->set_billing_address_1(get_user_meta($cliente_id, 'fact_calle', true));
     $order->set_billing_address_2(get_user_meta($cliente_id, 'fact_colonia', true));
@@ -599,11 +601,6 @@ function ajax_registrar_venta_autopartes() {
     $order->set_billing_postcode(get_user_meta($cliente_id, 'fact_cp', true));
     $order->set_billing_country(get_user_meta($cliente_id, 'fact_pais', true));
 
-    // Guardar también datos fiscales personalizados como metadatos (opcional)
-    update_post_meta($order->get_id(), '_rfc', get_user_meta($cliente_id, 'rfc', true));
-    update_post_meta($order->get_id(), '_uso_cfdi', get_user_meta($cliente_id, 'uso_cfdi', true));
-    update_post_meta($order->get_id(), '_regimen_fiscal', get_user_meta($cliente_id, 'regimen_fiscal', true));
-
     foreach ($productos as $p) {
         $product_id = wc_get_product_id_by_sku($p['sku']);
         if ($product_id) {
@@ -611,22 +608,18 @@ function ajax_registrar_venta_autopartes() {
         }
     }
 
-    // Mapear método de pago WooCommerce
     $metodo_wc = match($metodo_pago) {
         'efectivo'       => 'cod',
         'transferencia'  => 'bacs',
-        'tarjeta'        => 'manual',  // puede ser stripe si lo tienes
-        'credito'        => 'manual',  // pago manual con seguimiento
+        'tarjeta'        => 'manual',
+        'credito'        => 'manual',
         default          => 'manual',
     };
 
     $order->set_payment_method($metodo_wc);
     $order->set_payment_method_title(ucfirst($metodo_pago));
-
-    // Cambiar estado del pedido según lógica de tu POS
     $order->update_status('processing');
 
-    // Guardar metadatos adicionales
     update_post_meta($order->get_id(), '_venta_autoparte_id', $venta_id);
     update_post_meta($order->get_id(), '_canal_venta', $canal_venta);
     update_post_meta($order->get_id(), '_tipo_cliente', $tipo_cliente);
@@ -634,53 +627,44 @@ function ajax_registrar_venta_autopartes() {
     update_post_meta($order->get_id(), '_estado_pago', $estado_pago);
     update_post_meta($order->get_id(), '_oc_url', $oc_url);
     update_post_meta($order->get_id(), '_estado_logistico', 'pendiente_armado');
+    update_post_meta($order->get_id(), '_estado_armado', 'pendiente_armado');
 
     $order->calculate_totals();
     $order->save();
 
-    // Relacionar pedido con la venta personalizada
+    // 🎯 Relacionar venta y pedido
     $wpdb->update("{$wpdb->prefix}ventas_autopartes", [
         'woo_order_id' => $order->get_id()
     ], ['id' => $venta_id]);
 
-    // Insertar en cuentas por cobrar si fue a crédito
+    // 🎯 Insertar Cuenta por Cobrar si fue crédito
     if ($estado_pago === 'pendiente') {
         $dias_credito = intval(get_user_meta($cliente_id, 'dias_credito', true)) ?: 15;
-        $fecha_registro = current_time('mysql');
-        $fecha_vencimiento = date('Y-m-d H:i:s', strtotime("+$dias_credito days"));
+        $fecha_creacion = current_time('mysql');
+        $fecha_limite_pago = date('Y-m-d H:i:s', strtotime("+$dias_credito days"));
 
-        $insertado_cxc = $wpdb->insert("{$wpdb->prefix}cuentas_cobrar", [
+        $wpdb->insert("{$wpdb->prefix}cuentas_cobrar", [
             'venta_id'          => $venta_id,
             'cliente_id'        => $cliente_id,
             'vendedor_id'       => $vendedor_id,
             'monto_total'       => $total,
             'monto_pagado'      => 0,
             'saldo_pendiente'   => $total,
-            'fecha_creacion'    => $fecha_registro,
-            'fecha_limite_pago' => $fecha_vencimiento,
+            'fecha_creacion'    => $fecha_creacion,
+            'fecha_limite_pago' => $fecha_limite_pago,
             'estado'            => 'pendiente',
             'orden_compra_url'  => $oc_url
         ]);
-
-        if ($insertado_cxc === false) {
-            error_log("❌ Error al insertar en cuentas_cobrar: " . $wpdb->last_error);
-        } else {
-            error_log("✅ Insertado CxC con OC: " . $oc_url);
-        }
     }
 
-    // Descontar stock
+    // 🎯 Descontar stock y actualizar estado de solicitudes
     foreach ($productos as $p) {
         $producto_id = wc_get_product_id_by_sku($p['sku']);
         if ($producto_id) {
-            $stock_actual = get_post_meta($producto_id, '_stock', true);
-            $nuevo_stock = max(0, intval($stock_actual) - intval($p['cantidad']));
-            update_post_meta($producto_id, '_stock', $nuevo_stock);
+            $stock_actual = (int) get_post_meta($producto_id, '_stock', true);
+            update_post_meta($producto_id, '_stock', max(0, $stock_actual - intval($p['cantidad'])));
         }
-    }
 
-    // Cambiar estado de solicitudes
-    foreach ($productos as $p) {
         if (!empty($p['solicitud_id'])) {
             $wpdb->update("{$wpdb->prefix}solicitudes_piezas", [
                 'estado' => 'vendido'
@@ -688,8 +672,279 @@ function ajax_registrar_venta_autopartes() {
         }
     }
 
-    wp_send_json_success(['venta_id' => $venta_id]);
+    // 🚀 Respuesta de éxito
+    wp_send_json_success([
+        'venta_id' => $venta_id,
+        'woo_order_id' => $order->get_id()
+    ]);
 }
+
+add_action('wp_ajax_ajax_actualizar_estado_armado', 'ajax_actualizar_estado_armado');
+
+function ajax_actualizar_estado_armado() {
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'No tienes permisos.']);
+    }
+
+    $pedido_id = intval($_POST['pedido_id']);
+    $nuevo_estado = sanitize_text_field($_POST['nuevo_estado']);
+
+    if (!$pedido_id || !$nuevo_estado) {
+        wp_send_json_error(['message' => 'Datos incompletos.']);
+    }
+
+    update_post_meta($pedido_id, '_estado_armado', $nuevo_estado);
+
+    wp_send_json_success(['message' => 'Estado actualizado correctamente.']);
+}
+
+add_action('wp_ajax_ajax_obtener_pedidos_armado', 'ajax_obtener_pedidos_armado');
+
+function ajax_obtener_pedidos_armado() {
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'No autorizado']);
+    }
+
+    // Filtros recibidos
+    $estado_filtro = sanitize_text_field($_POST['estado'] ?? '');
+    $cliente_filtro = sanitize_text_field($_POST['cliente'] ?? '');
+    $pagina = max(1, intval($_POST['pagina'] ?? 1));
+    $por_pagina = max(1, intval($_POST['por_pagina'] ?? 10));
+    
+    $args = [
+        'status' => ['processing'], // Solo pedidos "processing"
+        'orderby' => 'date',
+        'order' => 'DESC',
+        'limit' => -1, // Cargar todos para filtrar manualmente
+    ];
+
+    $query = new WC_Order_Query($args);
+    $pedidos = $query->get_orders();
+
+    $resultado = [];
+
+    foreach ($pedidos as $pedido) {
+        /** @var WC_Order $pedido */
+        $woo_order_id = $pedido->get_id();
+        $estado_armado = get_post_meta($woo_order_id, '_estado_armado', true);
+
+        if (empty($estado_armado)) {
+            $estado_armado = 'pendiente_armado';
+        }
+
+        // Filtro por estado_armado
+        if (!empty($estado_filtro) && $estado_armado !== $estado_filtro) {
+            continue;
+        }
+
+        // Filtro por cliente (nombre o email)
+        $cliente_nombre = $pedido->get_billing_first_name();
+        $cliente_email = $pedido->get_billing_email();
+        if (!empty($cliente_filtro) && stripos($cliente_nombre . ' ' . $cliente_email, $cliente_filtro) === false) {
+            continue;
+        }
+
+        $resultado[] = [
+            'id' => $woo_order_id,
+            'cliente' => $cliente_nombre ?: $cliente_email,
+            'total' => number_format($pedido->get_total(), 2),
+            'estado_woo' => wc_get_order_status_name($pedido->get_status()),
+            'estado_armado' => $estado_armado,
+            'fecha' => $pedido->get_date_created() ? $pedido->get_date_created()->format('Y-m-d H:i') : '',
+            'ver_url' => admin_url("post.php?post={$woo_order_id}&action=edit"),
+        ];
+    }
+
+    // Paginación manual
+    $total_pedidos = count($resultado);
+    $total_paginas = ceil($total_pedidos / $por_pagina);
+    $offset = ($pagina - 1) * $por_pagina;
+    $resultado_paginado = array_slice($resultado, $offset, $por_pagina);
+
+    wp_send_json_success([
+        'pedidos' => $resultado_paginado,
+        'total_paginas' => $total_paginas
+    ]);
+}
+
+function ajax_obtener_productos_pedido() {
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'No autorizado']);
+    }
+
+    global $wpdb;
+
+    $pedido_id = intval($_POST['pedido_id'] ?? 0);
+    if (!$pedido_id) {
+        wp_send_json_error(['message' => 'ID de pedido inválido']);
+    }
+
+    $pedido = wc_get_order($pedido_id);
+    if (!$pedido) {
+        wp_send_json_error(['message' => 'Pedido no encontrado']);
+    }
+
+    $productos = [];
+    foreach ($pedido->get_items() as $item) {
+        $product_id = $item->get_product_id();
+        $product = wc_get_product($product_id);
+        if (!$product) continue;
+
+        $ubicacion_raw = get_post_meta($product_id, '_ubicacion_fisica', true);
+        $ubicacion_nombre = 'Sin ubicación';
+        $ubicacion_descripcion = '';
+        $ubicacion_imagen = '';
+        
+        if (!empty($ubicacion_raw)) {
+            if (is_numeric($ubicacion_raw)) {
+                // Si es número, buscar por ID
+                $ubicacion_info = $wpdb->get_row(
+                    $wpdb->prepare("SELECT nombre, descripcion, imagen_url FROM {$wpdb->prefix}ubicaciones_autopartes WHERE id = %d", intval($ubicacion_raw))
+                );
+            } else {
+                // Si es texto, buscar por nombre
+                $ubicacion_info = $wpdb->get_row(
+                    $wpdb->prepare("SELECT nombre, descripcion, imagen_url FROM {$wpdb->prefix}ubicaciones_autopartes WHERE nombre = %s", sanitize_text_field($ubicacion_raw))
+                );
+            }
+        
+            if ($ubicacion_info) {
+                $ubicacion_nombre = $ubicacion_info->nombre;
+                $ubicacion_descripcion = $ubicacion_info->descripcion;
+                $ubicacion_imagen = $ubicacion_info->imagen_url;
+            } else {
+                // No se encontró en tabla, usar el texto crudo como nombre
+                $ubicacion_nombre = is_numeric($ubicacion_raw) ? 'Sin ubicación' : $ubicacion_raw;
+            }
+        }
+
+        $productos[] = [
+            'sku' => $product->get_sku(),
+            'nombre' => $product->get_name(),
+            'imagen_producto' => wp_get_attachment_url($product->get_image_id()),
+            'ubicacion_nombre' => $ubicacion_nombre,
+            'ubicacion_descripcion' => $ubicacion_descripcion,
+            'ubicacion_imagen' => $ubicacion_imagen
+        ];
+    }
+
+    $datos_pedido = [
+        'cliente' => $pedido->get_billing_first_name() ?: $pedido->get_billing_email(),
+        'fecha' => $pedido->get_date_created() ? $pedido->get_date_created()->format('Y-m-d H:i') : '',
+        'total' => $pedido->get_total()
+    ];
+
+    wp_send_json_success([
+        'productos' => $productos,
+        'datos_pedido' => $datos_pedido
+    ]);
+}
+
+add_action('wp_ajax_ajax_obtener_productos_pedido', 'ajax_obtener_productos_pedido');
+
+add_action('wp_ajax_ajax_buscar_producto_por_sku_pedido', 'ajax_buscar_producto_por_sku_pedido');
+
+function ajax_buscar_producto_por_sku_pedido() {
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'No autorizado']);
+    }
+
+    global $wpdb;
+
+    $pedido_id = intval($_POST['pedido_id'] ?? 0);
+    $sku_escaneado = sanitize_text_field($_POST['sku'] ?? '');
+
+    if (!$pedido_id || empty($sku_escaneado)) {
+        wp_send_json_error(['message' => 'Datos incompletos']);
+    }
+
+    $pedido = wc_get_order($pedido_id);
+    if (!$pedido) {
+        wp_send_json_error(['message' => 'Pedido no encontrado']);
+    }
+
+    foreach ($pedido->get_items() as $item_id => $item) {
+        $product_id = $item->get_product_id();
+        $product = wc_get_product($product_id);
+
+        if (!$product) {
+            continue;
+        }
+
+        // ⚡ CORREGIDO: Comparar correctamente SKU completo
+        $sku_producto = $product->get_sku(); // Aquí ya viene el SKU como 019-0630-22#P1174
+
+        if (strcasecmp(trim($sku_producto), trim($sku_escaneado)) === 0) {
+            // Si coincide el SKU, enviamos el producto
+            $ubicacion_id = get_post_meta($product_id, '_ubicacion_fisica', true);
+            $ubicacion_info = null;
+            if ($ubicacion_id) {
+                $ubicacion_info = $wpdb->get_row(
+                    $wpdb->prepare("SELECT nombre, descripcion, imagen_url FROM {$wpdb->prefix}ubicaciones_autopartes WHERE id = %d", $ubicacion_id)
+                );
+            }
+
+            wp_send_json_success([
+                'sku' => $sku_producto,
+                'nombre' => $product->get_name(),
+                'imagen_producto' => wp_get_attachment_url($product->get_image_id()),
+                'ubicacion_nombre' => $ubicacion_info ? $ubicacion_info->nombre : 'Sin ubicación',
+                'ubicacion_descripcion' => $ubicacion_info ? $ubicacion_info->descripcion : '',
+                'ubicacion_imagen' => $ubicacion_info ? $ubicacion_info->imagen_url : ''
+            ]);
+        }
+    }
+
+    // Si no encuentra ningún producto
+    wp_send_json_error(['message' => 'Producto no encontrado en el pedido']);
+}
+
+function ajax_finalizar_armado_pedido() {
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'No autorizado']);
+    }
+
+    $pedido_id = intval($_POST['pedido_id'] ?? 0);
+    if (!$pedido_id) {
+        wp_send_json_error(['message' => 'ID de pedido inválido']);
+    }
+
+    $pedido = wc_get_order($pedido_id);
+    if (!$pedido) {
+        wp_send_json_error(['message' => 'Pedido no encontrado']);
+    }
+
+    // Actualizar meta personalizado del armado
+    update_post_meta($pedido_id, '_estado_armado', 'listo_para_envio');
+
+    wp_send_json_success(['message' => 'El armado del pedido se ha finalizado correctamente.']);
+}
+
+add_action('wp_ajax_ajax_finalizar_armado_pedido', 'ajax_finalizar_armado_pedido');
+
+
+function ajax_cambiar_estado_armado() {
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'No tienes permisos para actualizar pedidos.']);
+    }
+
+    $pedido_id = intval($_POST['pedido_id'] ?? 0);
+    $nuevo_estado = sanitize_text_field($_POST['nuevo_estado'] ?? '');
+
+    if (!$pedido_id || !$nuevo_estado) {
+        wp_send_json_error(['message' => 'Datos incompletos.']);
+    }
+
+    if (!in_array($nuevo_estado, ['pendiente_armado', 'en_armado', 'listo_envio'])) {
+        wp_send_json_error(['message' => 'Estado inválido.']);
+    }
+
+    update_post_meta($pedido_id, '_estado_armado', $nuevo_estado);
+
+    wp_send_json_success(['message' => 'Estado actualizado.']);
+}
+
+add_action('wp_ajax_ajax_cambiar_estado_armado', 'ajax_cambiar_estado_armado');
 
 add_action('wp_ajax_ajax_obtener_pedidos', 'ajax_obtener_pedidos');
 function ajax_obtener_pedidos() {
@@ -1148,9 +1403,11 @@ function ajax_validar_credito_cliente() {
     ]);
 }
 // Endpoint AJAX: Obtener cuentas por cobrar
+// Endpoint AJAX: Obtener cuentas por cobrar (WooCommerce + POS)
 add_action('wp_ajax_ajax_obtener_cuentas_cobrar', function () {
     global $wpdb;
 
+    // 🛡️ Sanitizar inputs recibidos
     $cliente_term = sanitize_text_field($_POST['cliente'] ?? '');
     $estado       = sanitize_text_field($_POST['estado'] ?? '');
     $desde        = sanitize_text_field($_POST['desde'] ?? '');
@@ -1162,70 +1419,74 @@ add_action('wp_ajax_ajax_obtener_cuentas_cobrar', function () {
     $where = "1=1";
     $params = [];
 
-    if ($estado) {
+    // 🔥 Aplicar filtros dinámicos
+    if (!empty($estado)) {
         $where .= " AND estado = %s";
         $params[] = $estado;
     }
-
-    if ($desde) {
+    if (!empty($desde)) {
         $where .= " AND DATE(fecha_creacion) >= %s";
         $params[] = $desde;
     }
-    if ($hasta) {
+    if (!empty($hasta)) {
         $where .= " AND DATE(fecha_creacion) <= %s";
         $params[] = $hasta;
     }
 
-    $cliente_ids = [];
-    if ($cliente_term) {
+    // 🔥 Filtro por cliente
+    if (!empty($cliente_term)) {
         $user_query = get_users([
             'search' => '*' . esc_attr($cliente_term) . '*',
             'search_columns' => ['user_email', 'display_name'],
             'fields' => ['ID']
         ]);
         $cliente_ids = array_map('intval', $user_query);
+
         if (empty($cliente_ids)) {
             wp_send_json_success([
                 'cuentas' => [],
                 'total_paginas' => 0
             ]);
         }
+
         $placeholders = implode(',', array_fill(0, count($cliente_ids), '%d'));
         $where .= " AND cliente_id IN ($placeholders)";
         $params = array_merge($params, $cliente_ids);
     }
 
-    // Total resultados
+    // 🔍 Consulta: obtener cuentas por cobrar
     $sql_total = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}cuentas_cobrar WHERE $where", ...$params);
-    $total_resultados = $wpdb->get_var($sql_total);
+    $total_resultados = (int) $wpdb->get_var($sql_total);
 
-    // Consulta con subconsulta para el último comprobante
     $sql = $wpdb->prepare(
-        "SELECT c.*, 
+        "SELECT c.*,
             (SELECT comprobante_url FROM {$wpdb->prefix}pagos_cxc 
              WHERE cuenta_id = c.id AND comprobante_url IS NOT NULL 
              ORDER BY fecha_pago DESC LIMIT 1) AS comprobante_pago_url
          FROM {$wpdb->prefix}cuentas_cobrar c
-         WHERE $where 
-         ORDER BY c.fecha_creacion DESC 
+         WHERE $where
+         ORDER BY c.fecha_creacion DESC
          LIMIT %d OFFSET %d",
         ...array_merge($params, [$por_pagina, $offset])
     );
+
     $cuentas = $wpdb->get_results($sql);
 
+    // 📦 Formatear resultados
     $formateadas = [];
     foreach ($cuentas as $cuenta) {
         $user = get_userdata($cuenta->cliente_id);
+
         $formateadas[] = [
-            'id'                    => $cuenta->id,
-            'cliente'               => $user ? $user->display_name : 'Cliente eliminado',
-            'monto_total'           => number_format($cuenta->monto_total, 2),
-            'monto_pagado'          => number_format($cuenta->monto_pagado, 2),
-            'saldo_pendiente'       => number_format($cuenta->saldo_pendiente, 2),
+            'id'                    => (int) $cuenta->id,
+            'cliente'               => $user ? esc_html($user->display_name) : 'Cliente eliminado',
+            'monto_total'           => number_format((float) $cuenta->monto_total, 2),
+            'monto_pagado'          => number_format((float) $cuenta->monto_pagado, 2),
+            'saldo_pendiente'       => number_format((float) $cuenta->saldo_pendiente, 2),
             'fecha_limite_pago'     => date('Y-m-d', strtotime($cuenta->fecha_limite_pago)),
-            'estado'                => $cuenta->estado,
-            'orden_compra_url'      => $cuenta->orden_compra_url ?? null,
-            'comprobante_pago_url'  => $cuenta->comprobante_pago_url ?? null,
+            'estado'                => sanitize_text_field($cuenta->estado),
+            'orden_compra_url'      => !empty($cuenta->orden_compra_url) ? esc_url($cuenta->orden_compra_url) : null,
+            'comprobante_pago_url'  => !empty($cuenta->comprobante_pago_url) ? esc_url($cuenta->comprobante_pago_url) : null,
         ];
     }
 
@@ -2289,6 +2550,384 @@ function woocommerce_redireccion_personalizada($redirect, $user) {
     return $redirect;
 }
 
+//Funcionalida para credito 
+// Agregar Gateway Personalizado de Pago a Crédito
+add_filter('woocommerce_payment_gateways', function($methods) {
+    $methods[] = 'WC_Gateway_Credito_Cliente';
+    return $methods;
+});
+
+// Registrar clase del Gateway
+add_action('plugins_loaded', function() {
+    if (!class_exists('WC_Payment_Gateway')) return;
+
+    class WC_Gateway_Credito_Cliente extends WC_Payment_Gateway {
+        public function __construct() {
+            $this->id = 'credito_cliente';
+            $this->has_fields = false;
+            $this->method_title = 'Pago a Crédito';
+            $this->method_description = 'Pago usando crédito disponible para clientes aprobados.';
+        
+            $this->init_form_fields();
+            $this->init_settings();
+        
+            $this->enabled = $this->get_option('enabled'); // <-- Faltaba esta línea ✅
+            $this->title = $this->get_option('title');
+            $this->description = $this->get_option('description');
+        
+            add_action('woocommerce_update_options_payment_gateways_' . $this->id, [$this, 'process_admin_options']);
+        }
+
+        public function init_form_fields() {
+            $this->form_fields = [
+                'enabled' => [
+                    'title' => 'Activar/Desactivar',
+                    'type' => 'checkbox',
+                    'label' => 'Habilitar Pago a Crédito',
+                    'default' => 'yes'
+                ],
+                'title' => [
+                    'title' => 'Título mostrado al cliente',
+                    'type' => 'text',
+                    'default' => 'Pago a Crédito'
+                ],
+                'description' => [
+                    'title' => 'Descripción',
+                    'type' => 'textarea',
+                    'default' => 'Usa tu crédito disponible para completar tu compra.'
+                ]
+            ];
+        }
+
+        public function process_payment($order_id) {
+            $order = wc_get_order($order_id);
+            $order->payment_complete();
+            WC()->cart->empty_cart();
+
+            return [
+                'result' => 'success',
+                'redirect' => $this->get_return_url($order)
+            ];
+        }
+    }
+});
+
+// Mostrar "Crédito" solo a clientes con crédito activo
+add_filter('woocommerce_available_payment_gateways', function($gateways) {
+    if (!is_admin() && is_checkout()) {
+        $user_id = get_current_user_id();
+        error_log('📦 woocommerce_available_payment_gateways ejecutado - Cliente ID: ' . $user_id);
+
+        if ($user_id) {
+            $estado_credito = get_user_meta($user_id, 'estado_credito', true);
+            error_log('📦 Estado crédito en filter: ' . $estado_credito);
+
+            if (strtolower($estado_credito) !== 'activo') {
+                unset($gateways['credito_cliente']);
+                error_log('❌ Crédito no activo, se eliminó el gateway');
+            } else {
+                error_log('✅ Crédito activo, se mantiene gateway');
+            }
+        }
+    }
+    return $gateways;
+});
+
+
+// Agregar campo de Orden de Compra al checkout si el cliente requiere OC
+add_action('woocommerce_after_order_notes', function($checkout) {
+    $user_id = get_current_user_id();
+    if (!$user_id) return;
+
+    $oc_obligatoria = get_user_meta($user_id, 'oc_obligatoria', true);
+    $estado_credito = get_user_meta($user_id, 'estado_credito', true);
+
+    if ($estado_credito !== 'activo' || $oc_obligatoria != '1') {
+        return; // No mostrar nada si no aplica
+    }
+
+    echo '<h3>Orden de Compra</h3>';
+    woocommerce_form_field('orden_compra_file', [
+        'type' => 'file',
+        'required' => true,
+        'label' => 'Sube tu Orden de Compra (PDF o Imagen)',
+        'class' => ['form-row-wide']
+    ], $checkout->get_value('orden_compra_file'));
+});
+// Validar crédito disponible y estado antes de procesar el checkout
+add_action('woocommerce_checkout_process', function() {
+    if (isset($_POST['payment_method']) && $_POST['payment_method'] === 'credito_cliente') {
+        $user_id = get_current_user_id();
+        if (!$user_id) return;
+
+        global $wpdb;
+
+        $estado_credito = get_user_meta($user_id, 'estado_credito', true);
+        $credito_total = floatval(get_user_meta($user_id, 'credito_disponible', true) ?: 0);
+
+        // ✅ Sumar todas las cuentas pendientes
+        $cuentas = $wpdb->get_results($wpdb->prepare(
+            "SELECT saldo_pendiente FROM {$wpdb->prefix}cuentas_cobrar WHERE cliente_id = %d AND estado = 'pendiente'",
+            $user_id
+        ));
+
+        $deuda_actual = 0;
+        foreach ($cuentas as $cuenta) {
+            $deuda_actual += floatval(str_replace(['$', ','], '', $cuenta->saldo_pendiente));
+        }
+
+        $credito_disponible = $credito_total - $deuda_actual;
+        $total_carrito = WC()->cart->get_total('edit'); // Asegura usar monto flotante
+
+        if (strtolower($estado_credito) !== 'activo') {
+            wc_add_notice('❌ Tu crédito no está activo.', 'error');
+        } elseif ($credito_disponible < floatval(preg_replace('/[^\d.]/', '', $total_carrito))) {
+            wc_add_notice('❌ No tienes crédito suficiente para esta compra.', 'error');
+        }
+
+        // Validar OC obligatoria
+        $oc_obligatoria = get_user_meta($user_id, 'oc_obligatoria', true);
+        if ($oc_obligatoria == '1' && empty($_FILES['orden_compra_file']['name'])) {
+            wc_add_notice('❌ Debes subir una Orden de Compra para completar la compra.', 'error');
+        }
+    }
+});
+
+//crear cuenta por cobrar
+function crear_cuenta_cobrar_manual($order_id) {
+    global $wpdb;
+
+    if (!$order_id) {
+        error_log('⚠️ crear_cuenta_cobrar_manual: order_id vacío');
+        return false;
+    }
+
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        error_log('⚠️ crear_cuenta_cobrar_manual: No se encontró la orden ' . $order_id);
+        return false;
+    }
+
+    if ($order->get_payment_method() !== 'credito_cliente') {
+        error_log('⚠️ Método de pago no es credito_cliente, es: ' . $order->get_payment_method());
+        return false;
+    }
+
+    if (get_post_meta($order_id, '_cuenta_cobrar_generada', true)) {
+        error_log('⛔ Cuenta por cobrar ya generada para pedido: ' . $order_id);
+        return false;
+    }
+
+    $cliente_id = $order->get_customer_id();
+    $total_orden = floatval($order->get_total());
+
+    if ($total_orden <= 0) {
+        error_log("❌ Total de la orden $order_id inválido.");
+        return false;
+    }
+
+    $oc_url = get_post_meta($order_id, '_orden_compra_cliente', true) ?: null;
+    $dias_credito = intval(get_user_meta($cliente_id, 'dias_credito', true)) ?: 15;
+    $fecha_creacion = current_time('mysql');
+    $fecha_limite_pago = date('Y-m-d H:i:s', strtotime("+$dias_credito days"));
+
+    // Preparar los datos de inserción
+    $datos_cxc = [
+        'cliente_id'        => $cliente_id,
+        'vendedor_id'       => 0, // Puedes cambiar si quieres asignar vendedor específico
+        'monto_total'       => $total_orden,
+        'monto_pagado'      => 0,
+        'saldo_pendiente'   => $total_orden,
+        'fecha_creacion'    => $fecha_creacion,
+        'fecha_limite_pago' => $fecha_limite_pago,
+        'estado'            => 'pendiente',
+        'orden_compra_url'  => $oc_url,
+        'order_id'          => $order_id // SIEMPRE relacionamos el pedido Woo
+    ];
+
+    // Si existe venta_id (por ejemplo, si algún día usas POS para crear pedidos)
+    if (metadata_exists('post', $order_id, '_venta_autoparte_id')) {
+        $venta_id = get_post_meta($order_id, '_venta_autoparte_id', true);
+        if (!empty($venta_id)) {
+            $datos_cxc['venta_id'] = intval($venta_id);
+        }
+    }
+
+    // Insertar la cuenta por cobrar
+    $insertado = $wpdb->insert("{$wpdb->prefix}cuentas_cobrar", $datos_cxc);
+
+    if ($insertado !== false) {
+        update_post_meta($order_id, '_cuenta_cobrar_generada', 1);
+        error_log("✅ Cuenta CxC creada exitosamente para pedido $order_id");
+        return true;
+    } else {
+        error_log("❌ Error al crear Cuenta CxC en MySQL: " . $wpdb->last_error);
+        return false;
+    }
+}
+
+//Crear cuenta por cobrar al momento de registrar la compra 
+add_action('woocommerce_payment_complete', function($order_id) {
+
+    if (!$order_id) return;
+
+    $order = wc_get_order($order_id);
+    if (!$order || $order->get_payment_method() !== 'credito_cliente') return;
+
+    error_log('✅ Método de pago credito_cliente confirmado para pedido: ' . $order_id);
+
+    crear_cuenta_cobrar_manual($order_id);
+}, 10, 1);
+
+// Guardar archivo de OC
+add_action('woocommerce_checkout_create_order', function($order, $data) {
+    if (!empty($_FILES['orden_compra_file']['name'])) {
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+
+        $file = $_FILES['orden_compra_file'];
+
+        // ⚠️ Validar tipo MIME
+        $allowed_mimes = ['image/jpeg', 'image/png', 'application/pdf'];
+        if (!in_array($file['type'], $allowed_mimes)) {
+            error_log('❌ Archivo OC rechazado por tipo no permitido: ' . $file['type']);
+            return;
+        }
+
+        // 🚀 Intentar comprimir si es imagen
+        if (in_array($file['type'], ['image/jpeg', 'image/png'])) {
+            $tmp_path = $file['tmp_name'];
+
+            $editor = wp_get_image_editor($tmp_path);
+            if (!is_wp_error($editor)) {
+                $editor->resize(1200, 1200, false); // redimensionar sin recortar
+                $editor->set_quality(75); // ajustar calidad
+                $editor->save($tmp_path);
+                error_log('🧯 Imagen OC comprimida exitosamente');
+            } else {
+                error_log('⚠️ No se pudo comprimir imagen OC: ' . $editor->get_error_message());
+            }
+        }
+
+        // ✅ Subir el archivo al Media Library
+        $attachment_id = media_handle_upload('orden_compra_file', 0);
+        if (!is_wp_error($attachment_id)) {
+            update_post_meta($order->get_id(), '_orden_compra_cliente', wp_get_attachment_url($attachment_id));
+            error_log('📎 OC subida para pedido: ' . $order->get_id());
+        } else {
+            error_log('❌ Error al subir OC: ' . $attachment_id->get_error_message());
+        }
+    }
+}, 10, 2);
+
+// Mostrar enlace de OC en admin
+add_action('woocommerce_admin_order_data_after_billing_address', function($order){
+    $oc_url = get_post_meta($order->get_id(), '_orden_compra_cliente', true);
+    if ($oc_url) {
+        echo '<p><strong>Orden de Compra:</strong> <a href="' . esc_url($oc_url) . '" target="_blank">Ver Orden de Compra</a></p>';
+    }
+}, 10, 1);
+add_action('template_redirect', function() {
+    if (is_checkout()) {
+        $user_id = get_current_user_id();
+        if ($user_id) {
+            $estado_credito = get_user_meta($user_id, 'estado_credito', true);
+            error_log('🧠 Debug Checkout: Cliente ID ' . $user_id . ' | Estado crédito: ' . $estado_credito);
+        } else {
+            error_log('❗ Debug Checkout: No hay cliente logueado');
+        }
+    }
+});
+// Habilitar el método de pago "credito_cliente" en WooCommerce Blocks
+add_action('woocommerce_blocks_loaded', function() {
+    if (!class_exists('Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType')) {
+        return;
+    }
+
+    if (!class_exists('WC_Gateway_Credito_Cliente_Blocks')) {
+        class WC_Gateway_Credito_Cliente_Blocks extends Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType {
+            protected $name = 'credito_cliente'; // ID exacto
+            protected $settings = [];
+            protected $supports = [ 'products', 'cart', 'checkout' ];
+    
+            public function initialize() {
+                $this->settings = get_option('woocommerce_credito_cliente_settings', []);
+            }
+    
+            public function get_payment_method_script_handles() {
+                return []; // Esto es obligatorio aunque no cargues JS adicional
+            }
+        }
+    }
+
+    add_action('woocommerce_blocks_payment_method_type_registration', function($payment_method_registry) {
+        $payment_method_registry->register(new WC_Gateway_Credito_Cliente_Blocks());
+    });
+});
+
+add_action('enqueue_block_assets', function() {
+    if (is_checkout()) {
+        wp_enqueue_script(
+            'wc-credito-cliente-blocks-js',
+            plugin_dir_url(__FILE__) . 'assets/js/wc-credito-cliente-blocks.js', // Ajusta la ruta si es diferente
+            ['wc-blocks-registry', 'wp-element', 'wp-i18n'],
+            '1.0.0',
+            true
+        );
+    }
+});
+
+// Registrar el método de pago "Pago a Crédito" en WooCommerce Blocks
+// Debug: Registro del método de pago en WooCommerce Blocks
+add_action('woocommerce_blocks_payment_method_type_registration', function($payment_method_registry) {
+    error_log('🚀 woocommerce_blocks_payment_method_type_registration ejecutado');
+
+    if (!class_exists('Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType')) {
+        error_log('⚠️ No existe AbstractPaymentMethodType. No se puede registrar Blocks Payment.');
+        return;
+    }
+
+    if (!class_exists('WC_Gateway_Credito_Cliente_Blocks')) {
+        class WC_Gateway_Credito_Cliente_Blocks extends Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType {
+            protected $name = 'credito_cliente';
+            protected $settings = [];
+            protected $supports = ['products', 'cart', 'checkout'];
+
+            public function initialize() {
+                error_log('🧩 initialize() de WC_Gateway_Credito_Cliente_Blocks ejecutado');
+                $this->settings = get_option('woocommerce_credito_cliente_settings', []);
+            }
+        }
+    }
+
+    $payment_method_registry->register(new WC_Gateway_Credito_Cliente_Blocks());
+    error_log('✅ Método credito_cliente registrado en WooCommerce Blocks');
+});
+
+// Debug: Cuando carga el Checkout
+add_action('template_redirect', function() {
+    if (is_checkout()) {
+        error_log('🛒 Checkout cargado - Cliente ID: ' . get_current_user_id());
+    }
+});
+
+add_action('enqueue_block_assets', function() {
+    if (is_checkout()) {
+        wp_enqueue_script(
+            'wc-credito-cliente-blocks-js',
+            plugin_dir_url(__FILE__) . 'assets/js/wc-credito-cliente-blocks.js',
+            ['wc-blocks-registry', 'wp-element', 'wp-i18n'],
+            '1.0.0',
+            true
+        );
+
+        // Enviar oc_obligatoria al script JS
+        $user_id = get_current_user_id();
+        $oc_obligatoria = get_user_meta($user_id, 'oc_obligatoria', true) ?: '0';
+        wp_localize_script('wc-credito-cliente-blocks-js', 'wp_oc_obligatoria', $oc_obligatoria);
+    }
+});
 
 add_action('admin_enqueue_scripts', 'catalogo_autopartes_enqueue_scripts');
 add_action('wp_ajax_ajax_enviar_solicitud_pieza', 'ajax_guardar_solicitud_pieza');

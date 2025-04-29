@@ -213,6 +213,26 @@ function catalogo_autopartes_menu() {
         'detalle-pedido',
         'catalogo_autopartes_detalle_pedido'
     );
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Armado de Pedidos',
+        'Armado de Pedidos',
+        'manage_options',
+        'gestion-armado',
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/gestion-armado.php';
+        }
+    );
+    add_submenu_page(
+        null, // No aparece en el menú lateral
+        'Armado de Pedido',
+        'Armado de Pedido',
+        'manage_options',
+        'armado-pedido',
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/armado-pedido.php';
+        }
+    );
 }
 
 add_action('admin_menu', 'catalogo_autopartes_menu');

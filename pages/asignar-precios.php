@@ -247,7 +247,7 @@ function abrirModalAsignarPrecio(id, sku, titulo, galeriaArray, descripcion) {
                     let html = `
                         <div>
                             <h4 style="margin-bottom: 10px; font-weight: 600; color: #333;">
-                                Precios de referencia para SKU sin IVA <span style="color:#0073aa;">${skuBase}</span>:
+                                Precios de referencia para SKU CON IVA <span style="color:#0073aa;">${skuBase}</span>:
                             </h4>
                             <ul style="list-style: none; padding: 0; margin: 0;">
                     `;
