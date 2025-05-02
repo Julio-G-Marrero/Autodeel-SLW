@@ -35,33 +35,6 @@ function catalogo_autopartes_menu() {
     );
 
     add_submenu_page(
-        'catalogo-autopartes',
-        'Punto de Venta',
-        'Punto de Venta',
-        'manage_options',
-        'punto-venta',
-        'catalogo_autopartes_punto_venta'
-    );
-
-    add_submenu_page(
-        'catalogo-autopartes',
-        'Reportes',
-        'Reportes',
-        'manage_options',
-        'reportes',
-        'catalogo_autopartes_reportes'
-    );
-
-    add_submenu_page(
-        'catalogo-autopartes',
-        'Configuración',
-        'Configuración',
-        'manage_options',
-        'configuracion',
-        'catalogo_autopartes_configuracion'
-    );
-
-    add_submenu_page(
         null, // No aparece en el menú
         'Resumen de Pieza',
         'Resumen de Pieza',
@@ -189,7 +162,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',                    
         'Resumen de Cortes',                      
         'Resumen de Cortes',                      
-        'manage_options',                         
+        'resumen_cortes',                         
         'resumen-cortes',                        
         function () {
             include plugin_dir_path(__FILE__) . '../pages/resumen-cortes.php';
@@ -199,7 +172,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Gestión de Pedidos',
         'Gestión de Pedidos',
-        'manage_options',
+        'gestion_de_pedidos',
         'gestion-pedidos',
         function () {
             include plugin_dir_path(__FILE__) . '../pages/gestion-pedidos.php';
@@ -217,7 +190,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Armado de Pedidos',
         'Armado de Pedidos',
-        'manage_options',
+        'armado_de_pedidos',
         'gestion-armado',
         function () {
             include plugin_dir_path(__FILE__) . '../pages/gestion-armado.php';
@@ -228,6 +201,7 @@ function catalogo_autopartes_menu() {
         'Armado de Pedido',
         'Armado de Pedido',
         'manage_options',
+        'armado_de_pedido',
         'armado-pedido',
         function () {
             include plugin_dir_path(__FILE__) . '../pages/armado-pedido.php';

@@ -1,6 +1,7 @@
 <?php
   if (!defined('ABSPATH')) exit;
-  
+  include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+  include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
   // Verificar que haya un pedido_id en URL
   $pedido_id = isset($_GET['pedido_id']) ? intval($_GET['pedido_id']) : 0;
   if (!$pedido_id) {

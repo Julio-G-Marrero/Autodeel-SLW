@@ -72,10 +72,10 @@ wp_enqueue_script('fontawesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-aw
                     <tr>
                         <th class="px-2 py-1">SKU</th>
                         <th class="px-2 py-1">Nombre</th>
-                        <th class="px-2 py-1">Cantidad</th>
+                        <!-- <th class="px-2 py-1">Cantidad</th> -->
                         <th class="px-2 py-1">Precio</th>
-                        <th class="px-2 py-1">Subtotal</th>
-                        <th class="px-2 py-1">Acciones</th>
+                        <!-- <th class="px-2 py-1">Subtotal</th> -->
+                        <th class="px-2 py-1"></th>
                     </tr>
                 </thead>
                 <tbody id="tablaProductos"></tbody>
@@ -100,7 +100,7 @@ wp_enqueue_script('fontawesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-aw
             <button id="btnValidarVenta"
             class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded text-lg flex items-center justify-center gap-2"
             >
-            <i class="fas fa-check-circle"></i> Validar Venta
+            <i class="fas fa-check-circle"></i> Proceder Venta
             </button>
         </div>
     </section>
@@ -164,13 +164,18 @@ jQuery(document).ready(function($) {
                 <tr class="border-t">
                     <td class="px-2 py-1">${prod.sku}</td>
                     <td class="px-2 py-1">${prod.nombre}</td>
-                    <td class="px-2 py-1">
+                    <td class="px-2 py-1 hidden">
                         <span class="block text-center">${prod.cantidad}</span>
                     </td>
                     <td class="px-2 py-1">$${prod.precio.toFixed(2)}</td>
-                    <td class="px-2 py-1">$${subtotal.toFixed(2)}</td>
+                    <td class="px-2 py-1 hidden">$${subtotal.toFixed(2)}</td>
                     <td class="px-2 py-1">
-                        <button data-index="${index}" class="text-red-600 btn-eliminar">Eliminar</button>
+                        <button data-index="${index}" class="text-red-600 btn-eliminar">
+                        <svg class="w-4 h-4 text-red-600 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+                        <path fill-rule="evenodd" d="M8.586 2.586A2 2 0 0 1 10 2h4a2 2 0 0 1 2 2v2h3a1 1 0 1 1 0 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8a1 1 0 0 1 0-2h3V4a2 2 0 0 1 .586-1.414ZM10 6h4V4h-4v2Zm1 4a1 1 0 1 0-2 0v8a1 1 0 1 0 2 0v-8Zm4 0a1 1 0 1 0-2 0v8a1 1 0 1 0 2 0v-8Z" clip-rule="evenodd"/>
+                        </svg>
+
+                        </button>
                     </td>
                 </tr>
             `);
@@ -211,7 +216,7 @@ jQuery(document).ready(function($) {
 
         // Aquí iría el fetch/post real con el clienteID y los productos
 
-        $('#mensajeVenta').html(`<p class="text-green-600">✅ Venta registrada correctamente (simulado)</p>`);
+        $('#mensajeVenta').html(`<p class="text-green-600">Venta registrada correctamente (simulado)</p>`);
     });
 
     $('#cliente').on('input', function () {
@@ -428,7 +433,7 @@ jQuery(document).ready(function($) {
                 </div>
             `,
             showCancelButton: true,
-            confirmButtonText: '✅ Confirmar Venta',
+            confirmButtonText: 'Confirmar Venta',
             cancelButtonText: 'Cancelar',
             focusConfirm: false,
             preConfirm: () => {
@@ -484,7 +489,7 @@ jQuery(document).ready(function($) {
             .then(r => r.json())
             .then(res => {
                 if (res.success) {
-                    Swal.fire('✅ Venta registrada', res.data.mensaje || 'La venta fue guardada con éxito.', 'success');
+                    Swal.fire('Venta registrada', res.data.mensaje || 'La venta fue guardada con éxito.', 'success');
                     productosSeleccionados = [];
                     actualizarTabla();
                     $('#cliente').val('');
@@ -545,7 +550,7 @@ jQuery(document).ready(function($) {
                 html += `<p class="text-red-600">⚠️ Crédito insuficiente. Disponible: $${c.credito_disponible}</p>`;
             }
 
-            $('#extraValidacion').html(html || '<p class="text-green-600">✅ Cliente válido para crédito.</p>');
+            $('#extraValidacion').html(html || '<p class="text-green-600"> Cliente válido para crédito.</p>');
         });
     }
 
@@ -631,7 +636,7 @@ jQuery(document).ready(function($) {
             actualizarTabla(); // función que ya tienes para redibujar la tabla
 
             $('#resultadoBusquedaProducto').html(`
-                <p class="text-green-600">✅ Producto <strong>${producto.nombre}</strong> agregado desde QR.</p>
+                <p class="text-green-600"> Producto <strong>${producto.nombre}</strong> agregado desde QR.</p>
             `);
         });
     }
@@ -751,7 +756,7 @@ jQuery(document).ready(function($) {
                             data-nombre="${p.nombre}" 
                             data-precio="${p.precio}" 
                             data-solicitud_id="${p.solicitud_id || ''}" 
-                            class="agregar-producto">
+                            class="mt-2 bg-blue-600 text-white px-3 py-1 rounded agregar-producto">
                             Agregar
                         </button>
                     </div>
@@ -769,7 +774,7 @@ jQuery(document).ready(function($) {
         const total = parseFloat($('#total').text().replace('$', ''));
 
         if (!clienteID || productosSeleccionados.length === 0) {
-            Swal.fire('⚠️ Información incompleta', 'Debes seleccionar un cliente y al menos un producto.', 'warning');
+            Swal.fire('Información incompleta', 'Debes seleccionar un cliente y al menos un producto.', 'warning');
             return;
         }
 

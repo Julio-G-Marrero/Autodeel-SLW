@@ -98,11 +98,27 @@ $page = $_GET['page'] ?? '';
                         </a>
                     </li>
                 <?php endif; ?>
+                <?php if (current_user_can('gestion_cuentas_cobrar')): ?>
+                    <li>
+                        <a href="?page=cuentas-por-cobrar" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'cuentas-por-cobrar' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Cuentas por Cobrar
+                        </a>
+                    </li>
+                <?php endif; ?>
                 <?php if (current_user_can('gestion_de_cajas')): ?>
                     <li>
                         <a href="?page=gestion-cajas" class="block px-4 py-2 rounded font-medium text-sm transition 
                             <?= $page == 'gestion-cajas' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
                             Apertura de Cajas
+                        </a>
+                    </li>
+                <?php endif; ?>
+                <?php if (current_user_can('resumen_cortes')): ?>
+                    <li>
+                        <a href="?page=resumen-cortes" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'resumen-cortes' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Resumen Cortes
                         </a>
                     </li>
                 <?php endif; ?>
@@ -127,6 +143,22 @@ $page = $_GET['page'] ?? '';
                         <a href="?page=alta-clientes" class="block px-4 py-2 rounded font-medium text-sm transition 
                             <?= $page == 'alta-clientes' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
                             Alta clientes
+                        </a>
+                    </li>
+                <?php endif; ?>
+                <?php if (current_user_can('gestion_de_pedidos')): ?>
+                    <li>
+                        <a href="?page=gestion-pedidos" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'gestion-pedidos' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Gestion de Pedidos
+                        </a>
+                    </li>
+                <?php endif; ?>
+                <?php if (current_user_can('armado_de_pedidos')): ?>
+                    <li>
+                        <a href="?page=gestion-armado" class="block px-4 py-2 rounded font-medium text-sm transition 
+                            <?= $page == 'gestion-armado' ? 'bg-gray-500 bg-opacity-30 font-bold text-black flex items-center justify-between py-1.5 px-4 rounded cursor-pointer' : 'text-gray-600 hover:bg-gray-700 hover:text-white border-2 border-solid ' ?>">
+                            Gestion Armado
                         </a>
                     </li>
                 <?php endif; ?>

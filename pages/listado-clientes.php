@@ -9,7 +9,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 ?>
 
 <div class="max-w-6xl mx-auto p-6 bg-white rounded shadow mt-6">
-    <h2 class="text-2xl font-bold mb-4">📋 Clientes Registrados</h2>
+    <h2 class="text-2xl font-bold mb-4">Clientes Registrados</h2>
 
     <!-- Filtros -->
     <div class="mb-4 flex flex-col md:flex-row gap-4">

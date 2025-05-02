@@ -8,7 +8,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 ?>
 
 <div class="max-w-7xl mx-auto p-6">
-    <h2 class="text-2xl font-bold mb-6">🧾 Resumen de Ventas</h2>
+    <h2 class="text-2xl font-bold mb-6">Resumen Ventas POS</h2>
 
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <input type="text" id="filtroBusqueda" placeholder="Buscar por cliente o folio..." class="border px-3 py-2 rounded w-full">

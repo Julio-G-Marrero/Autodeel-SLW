@@ -8,7 +8,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 ?>
 
 <div class="max-w-7xl mx-auto p-6">
-    <h2 class="text-2xl font-bold mb-6">📅 Resumen de Cortes de Caja</h2>
+    <h2 class="text-2xl font-bold mb-6">Resumen de Cortes de Caja</h2>
 
     <!-- Filtros -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -216,7 +216,7 @@ jQuery(document).ready(function($) {
                     corte_id: corteId
                 }, function (res) {
                     if (res.success) {
-                        Swal.fire('✅ Revertido', 'Se quitó la autorización correctamente.', 'success');
+                        Swal.fire('Revertido', 'Se quitó la autorización correctamente.', 'success');
                         cargarCortes();
                     } else {
                         Swal.fire('Error', res.data?.message || 'No se pudo revertir el V°B°', 'error');

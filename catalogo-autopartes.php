@@ -712,7 +712,7 @@ function ajax_obtener_pedidos_armado() {
     $por_pagina = max(1, intval($_POST['por_pagina'] ?? 10));
     
     $args = [
-        'status' => ['processing'], // Solo pedidos "processing"
+        'status' => ['processing', 'completed'], // Incluye también pedidos completados
         'orderby' => 'date',
         'order' => 'DESC',
         'limit' => -1, // Cargar todos para filtrar manualmente
@@ -733,8 +733,14 @@ function ajax_obtener_pedidos_armado() {
         }
 
         // Filtro por estado_armado
-        if (!empty($estado_filtro) && $estado_armado !== $estado_filtro) {
-            continue;
+        if (!empty($estado_filtro)) {
+            if ($estado_filtro === 'entregado') {
+                if ($estado_armado !== 'entregado' && $pedido->get_status() !== 'completed') {
+                    continue;
+                }
+            } elseif ($estado_armado !== $estado_filtro) {
+                continue;
+            }
         }
 
         // Filtro por cliente (nombre o email)
@@ -766,6 +772,10 @@ function ajax_obtener_pedidos_armado() {
         'total_paginas' => $total_paginas
     ]);
 }
+
+add_action('woocommerce_order_status_completed', function($order_id) {
+    update_post_meta($order_id, '_estado_armado', 'entregado');
+});
 
 function ajax_obtener_productos_pedido() {
     if (!current_user_can('manage_woocommerce')) {
@@ -1459,17 +1469,24 @@ add_action('wp_ajax_ajax_obtener_cuentas_cobrar', function () {
     $total_resultados = (int) $wpdb->get_var($sql_total);
 
     $sql = $wpdb->prepare(
-        "SELECT c.*,
+        "SELECT 
+            c.id,
+            c.cliente_id,
+            c.monto_total,
+            c.monto_pagado,
+            c.saldo_pendiente,
+            c.fecha_limite_pago,
+            c.estado,
+            c.orden_compra_url,
             (SELECT comprobante_url FROM {$wpdb->prefix}pagos_cxc 
-             WHERE cuenta_id = c.id AND comprobante_url IS NOT NULL 
-             ORDER BY fecha_pago DESC LIMIT 1) AS comprobante_pago_url
-         FROM {$wpdb->prefix}cuentas_cobrar c
-         WHERE $where
-         ORDER BY c.fecha_creacion DESC
-         LIMIT %d OFFSET %d",
+            WHERE cuenta_id = c.id AND comprobante_url IS NOT NULL 
+            ORDER BY fecha_pago DESC LIMIT 1) AS comprobante_pago_url
+        FROM {$wpdb->prefix}cuentas_cobrar c
+        WHERE $where
+        ORDER BY c.fecha_creacion DESC
+        LIMIT %d OFFSET %d",
         ...array_merge($params, [$por_pagina, $offset])
     );
-
     $cuentas = $wpdb->get_results($sql);
 
     // 📦 Formatear resultados
@@ -1477,9 +1494,21 @@ add_action('wp_ajax_ajax_obtener_cuentas_cobrar', function () {
     foreach ($cuentas as $cuenta) {
         $user = get_userdata($cuenta->cliente_id);
 
+        // ⚙️ Lógica para obtener un nombre válido
+        $nombre_cliente = 'Cliente eliminado';
+        if ($user) {
+            $nombre_cliente = $user->display_name;
+            if (empty($nombre_cliente)) {
+                $nombre_cliente = trim($user->first_name . ' ' . $user->last_name);
+                if (empty($nombre_cliente)) {
+                    $nombre_cliente = $user->user_email;
+                }
+            }
+        }
+
         $formateadas[] = [
             'id'                    => (int) $cuenta->id,
-            'cliente'               => $user ? esc_html($user->display_name) : 'Cliente eliminado',
+            'cliente'               => esc_html($nombre_cliente),
             'monto_total'           => number_format((float) $cuenta->monto_total, 2),
             'monto_pagado'          => number_format((float) $cuenta->monto_pagado, 2),
             'saldo_pendiente'       => number_format((float) $cuenta->saldo_pendiente, 2),
@@ -1540,6 +1569,10 @@ function catalogo_autopartes_registrar_capacidades_personalizadas() {
         'gestion_cuentas_cobrar',
         'gestion_de_cajas',
         'ver_resumen_ventas',
+        'resumen_cortes',
+        'gestion_de_pedidos',
+        'armado_de_pedidos',
+        'armado_de_pedido',
         'ver_asignar_ubicaciones_qr',
         // Agrega aquí cualquier otra capacidad personalizada
     ];
@@ -2483,7 +2516,9 @@ function ocultar_sidebar_para_roles_personalizados() {
     if (
         current_user_can('rol_capturista') ||
         current_user_can('rol_solicitudes') ||
-        current_user_can('punto_de_venta')
+        current_user_can('punto_de_venta') ||
+        current_user_can('cobranza') ||
+        current_user_can('almacenista')
     ) {
         echo '<style>
             #adminmenu, #adminmenuback, #adminmenuwrap,
@@ -2546,9 +2581,18 @@ function woocommerce_redireccion_personalizada($redirect, $user) {
     if (in_array('punto_de_venta', $roles)) {
         return admin_url('admin.php?page=ventas-autopartes');
     }
+    
+    if (in_array('cobranza', $roles)) {
+        return admin_url('admin.php?page=cuentas-por-cobrar');
+    }
+
+    if (in_array('cobranza', $roles)) {
+        return admin_url('admin.php?page=gestion-armado');
+    }
 
     return $redirect;
 }
+
 
 //Funcionalida para credito 
 // Agregar Gateway Personalizado de Pago a Crédito
@@ -2616,8 +2660,6 @@ add_action('plugins_loaded', function() {
 add_filter('woocommerce_available_payment_gateways', function($gateways) {
     if (!is_admin() && is_checkout()) {
         $user_id = get_current_user_id();
-        error_log('📦 woocommerce_available_payment_gateways ejecutado - Cliente ID: ' . $user_id);
-
         if ($user_id) {
             $estado_credito = get_user_meta($user_id, 'estado_credito', true);
             error_log('📦 Estado crédito en filter: ' . $estado_credito);
@@ -2633,27 +2675,6 @@ add_filter('woocommerce_available_payment_gateways', function($gateways) {
     return $gateways;
 });
 
-
-// Agregar campo de Orden de Compra al checkout si el cliente requiere OC
-add_action('woocommerce_after_order_notes', function($checkout) {
-    $user_id = get_current_user_id();
-    if (!$user_id) return;
-
-    $oc_obligatoria = get_user_meta($user_id, 'oc_obligatoria', true);
-    $estado_credito = get_user_meta($user_id, 'estado_credito', true);
-
-    if ($estado_credito !== 'activo' || $oc_obligatoria != '1') {
-        return; // No mostrar nada si no aplica
-    }
-
-    echo '<h3>Orden de Compra</h3>';
-    woocommerce_form_field('orden_compra_file', [
-        'type' => 'file',
-        'required' => true,
-        'label' => 'Sube tu Orden de Compra (PDF o Imagen)',
-        'class' => ['form-row-wide']
-    ], $checkout->get_value('orden_compra_file'));
-});
 // Validar crédito disponible y estado antes de procesar el checkout
 add_action('woocommerce_checkout_process', function() {
     if (isset($_POST['payment_method']) && $_POST['payment_method'] === 'credito_cliente') {
@@ -2683,12 +2704,6 @@ add_action('woocommerce_checkout_process', function() {
             wc_add_notice('❌ Tu crédito no está activo.', 'error');
         } elseif ($credito_disponible < floatval(preg_replace('/[^\d.]/', '', $total_carrito))) {
             wc_add_notice('❌ No tienes crédito suficiente para esta compra.', 'error');
-        }
-
-        // Validar OC obligatoria
-        $oc_obligatoria = get_user_meta($user_id, 'oc_obligatoria', true);
-        if ($oc_obligatoria == '1' && empty($_FILES['orden_compra_file']['name'])) {
-            wc_add_notice('❌ Debes subir una Orden de Compra para completar la compra.', 'error');
         }
     }
 });
@@ -2755,6 +2770,17 @@ function crear_cuenta_cobrar_manual($order_id) {
 
     // Insertar la cuenta por cobrar
     $insertado = $wpdb->insert("{$wpdb->prefix}cuentas_cobrar", $datos_cxc);
+    // Marcar solicitud como vendida si aplica
+    $items = $order->get_items();
+    foreach ($items as $item) {
+        $product_id = $item->get_product_id();
+        $solicitud_id = get_post_meta($product_id, 'solicitud_id', true);
+        if ($solicitud_id) {
+            $wpdb->update("{$wpdb->prefix}solicitudes_piezas", [
+                'estado' => 'vendido'
+            ], ['id' => intval($solicitud_id)]);
+        }
+    }
 
     if ($insertado !== false) {
         update_post_meta($order_id, '_cuenta_cobrar_generada', 1);
@@ -2780,46 +2806,55 @@ add_action('woocommerce_payment_complete', function($order_id) {
 }, 10, 1);
 
 // Guardar archivo de OC
-add_action('woocommerce_checkout_create_order', function($order, $data) {
-    if (!empty($_FILES['orden_compra_file']['name'])) {
-        require_once ABSPATH . 'wp-admin/includes/file.php';
-        require_once ABSPATH . 'wp-admin/includes/media.php';
-        require_once ABSPATH . 'wp-admin/includes/image.php';
+// add_action('woocommerce_checkout_create_order', 'guardar_oc_en_biblioteca', 10, 2);
 
-        $file = $_FILES['orden_compra_file'];
+// function guardar_oc_en_biblioteca($order, $data) {
+//     error_log('📥 Hook `woocommerce_checkout_create_order` disparado para pedido ID: ' . $order->get_id());
 
-        // ⚠️ Validar tipo MIME
-        $allowed_mimes = ['image/jpeg', 'image/png', 'application/pdf'];
-        if (!in_array($file['type'], $allowed_mimes)) {
-            error_log('❌ Archivo OC rechazado por tipo no permitido: ' . $file['type']);
-            return;
-        }
+//     if (!isset($_FILES['orden_compra_file']) || empty($_FILES['orden_compra_file']['name'])) {
+//         error_log('⚠️ No se detectó archivo para OC en checkout');
+//         return;
+//     }
 
-        // 🚀 Intentar comprimir si es imagen
-        if (in_array($file['type'], ['image/jpeg', 'image/png'])) {
-            $tmp_path = $file['tmp_name'];
+//     require_once ABSPATH . 'wp-admin/includes/file.php';
+//     require_once ABSPATH . 'wp-admin/includes/media.php';
+//     require_once ABSPATH . 'wp-admin/includes/image.php';
 
-            $editor = wp_get_image_editor($tmp_path);
-            if (!is_wp_error($editor)) {
-                $editor->resize(1200, 1200, false); // redimensionar sin recortar
-                $editor->set_quality(75); // ajustar calidad
-                $editor->save($tmp_path);
-                error_log('🧯 Imagen OC comprimida exitosamente');
-            } else {
-                error_log('⚠️ No se pudo comprimir imagen OC: ' . $editor->get_error_message());
-            }
-        }
+//     $file = $_FILES['orden_compra_file'];
+//     $allowed_mimes = ['image/jpeg', 'image/png', 'application/pdf'];
 
-        // ✅ Subir el archivo al Media Library
-        $attachment_id = media_handle_upload('orden_compra_file', 0);
-        if (!is_wp_error($attachment_id)) {
-            update_post_meta($order->get_id(), '_orden_compra_cliente', wp_get_attachment_url($attachment_id));
-            error_log('📎 OC subida para pedido: ' . $order->get_id());
-        } else {
-            error_log('❌ Error al subir OC: ' . $attachment_id->get_error_message());
-        }
-    }
-}, 10, 2);
+//     if (!in_array($file['type'], $allowed_mimes)) {
+//         error_log('❌ Tipo de archivo no permitido: ' . $file['type']);
+//         return;
+//     }
+
+//     if (in_array($file['type'], ['image/jpeg', 'image/png'])) {
+//         $editor = wp_get_image_editor($file['tmp_name']);
+//         if (!is_wp_error($editor)) {
+//             $editor->resize(1200, 1200, false);
+//             $editor->set_quality(75);
+//             $resultado = $editor->save($file['tmp_name']);
+//             if (!is_wp_error($resultado)) {
+//                 error_log('🧯 Imagen OC comprimida con éxito');
+//             } else {
+//                 error_log('⚠️ Falló la compresión: ' . $resultado->get_error_message());
+//             }
+//         }
+//     }
+
+//     $attachment_id = media_handle_upload('orden_compra_file', 0);
+
+//     if (is_wp_error($attachment_id)) {
+//         error_log('❌ Error al subir archivo OC: ' . $attachment_id->get_error_message());
+//         return;
+//     }
+
+//     $url = wp_get_attachment_url($attachment_id);
+//     update_post_meta($order->get_id(), '_orden_compra_cliente', $url);
+//     update_post_meta($order->get_id(), '_orden_compra_attachment_id', $attachment_id);
+
+//     error_log('✅ Orden de compra subida para pedido ID: ' . $order->get_id());
+// }
 
 // Mostrar enlace de OC en admin
 add_action('woocommerce_admin_order_data_after_billing_address', function($order){
@@ -2833,7 +2868,6 @@ add_action('template_redirect', function() {
         $user_id = get_current_user_id();
         if ($user_id) {
             $estado_credito = get_user_meta($user_id, 'estado_credito', true);
-            error_log('🧠 Debug Checkout: Cliente ID ' . $user_id . ' | Estado crédito: ' . $estado_credito);
         } else {
             error_log('❗ Debug Checkout: No hay cliente logueado');
         }
@@ -2866,6 +2900,252 @@ add_action('woocommerce_blocks_loaded', function() {
     });
 });
 
+add_filter('woocommerce_my_account_my_orders_actions', function($actions, $order) {
+    $estado_armado = get_post_meta($order->get_id(), '_estado_armado', true);
+    $metodo_pago = $order->get_payment_method();
+
+    // Validar que el pedido no esté completado o cancelado
+    if ($order->has_status(['completed', 'cancelled', 'failed'])) {
+        return $actions;
+    }
+
+    // Mostrar botón solo si el estado armado es "enviado"
+    if ($estado_armado === 'enviado') {
+        $actions['recibir'] = [
+            'url'  => '#',
+            'name' => '📥 Recibir',
+            'custom_data' => [
+                'order-id' => $order->get_id(),
+                'metodo' => $metodo_pago
+            ]
+        ];
+    }
+
+    return $actions;
+}, 20, 2);
+
+// Reemplazar HTML del botón con el campo personalizado
+add_filter('woocommerce_my_account_my_orders_actions_html', function($html, $action, $order) {
+    return isset($action['custom_html']) ? $action['custom_html'] : $html;
+}, 10, 3);
+
+
+add_action('wp_ajax_ajax_recibir_pedido_credito_cliente', 'ajax_recibir_pedido_credito_cliente');
+
+function ajax_recibir_pedido_credito_cliente() {
+    if (!is_user_logged_in()) {
+        wp_send_json_error(['message' => 'No autorizado']);
+    }
+
+    $order_id = isset($_POST['order_id']) ? intval($_POST['order_id']) : 0;
+    if (!$order_id) {
+        wp_send_json_error(['message' => 'Pedido inválido o no autorizado']);
+    }
+
+    $order = wc_get_order($order_id);
+    if (!$order || $order->get_customer_id() !== get_current_user_id()) {
+        wp_send_json_error(['message' => 'No autorizado para este pedido']);
+    }
+
+    // Si es crédito, puede traer archivo
+    $metodo = $order->get_payment_method();
+    $oc_url = null;
+
+    if ($metodo === 'credito_cliente' && isset($_FILES['orden_compra']) && !empty($_FILES['orden_compra']['name'])) {
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+
+        $file = $_FILES['orden_compra'];
+        $allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+        if (!in_array($file['type'], $allowed)) {
+            wp_send_json_error(['message' => 'Tipo de archivo no permitido.']);
+        }
+
+        // Intentar comprimir si es imagen
+        if (in_array($file['type'], ['image/jpeg', 'image/png'])) {
+            $editor = wp_get_image_editor($file['tmp_name']);
+            if (!is_wp_error($editor)) {
+                $editor->resize(1200, 1200, false);
+                $editor->set_quality(75);
+                $editor->save($file['tmp_name']);
+            }
+        }
+
+        $attachment_id = media_handle_upload('orden_compra', 0);
+        if (!is_wp_error($attachment_id)) {
+            $oc_url = wp_get_attachment_url($attachment_id);
+            update_post_meta($order_id, '_orden_compra_cliente', $oc_url);
+        } else {
+            wp_send_json_error(['message' => 'Error al guardar la orden de compra.']);
+        }
+    }
+
+    // Marcar pedido como entregado
+    $order->update_status('completed');
+
+    // También podrías actualizar cuenta por cobrar aquí si aplica
+    global $wpdb;
+    $wpdb->update("{$wpdb->prefix}cuentas_cobrar", [
+        'orden_compra_url' => $oc_url
+    ], ['order_id' => $order_id]);
+
+    wp_send_json_success(['message' => 'Pedido recibido con éxito.']);
+}
+
+add_action('wp_enqueue_scripts', function () {
+    if (!is_account_page()) return;
+
+    wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', [], null, true);
+});
+
+add_action('wp_ajax_obtener_datos_pedido', function () {
+    $pedido_id = intval($_POST['pedido_id'] ?? 0);
+    if (!$pedido_id) {
+        wp_send_json_error(['message' => 'ID inválido']);
+    }
+
+    $order = wc_get_order($pedido_id);
+    if (!$order) {
+        wp_send_json_error(['message' => 'Pedido no encontrado']);
+    }
+
+    wp_send_json_success([
+        'metodo' => $order->get_payment_method()
+    ]);
+});
+
+add_action('wp_footer', function () {
+    if (!is_account_page()) return;
+
+    $user_id = get_current_user_id();
+    $oc_obligatoria = get_user_meta($user_id, 'oc_obligatoria', true);
+    ?>
+    <script>
+    jQuery(document).ready(function ($) {
+        // Agrega los atributos data-order y luego espera que estén listos
+        $('.woocommerce-button.recibir').each(function () {
+            const $btn = $(this);
+            const href = $btn.siblings('a.view').attr('href') || '';
+            const match = href.match(/view-order\/(\d+)/);
+            if (!match) return;
+
+            const orderId = match[1];
+            $btn.attr('data-order', orderId);
+
+            // Recuperar el método de pago
+            $.post('<?php echo admin_url('admin-ajax.php'); ?>', {
+                action: 'obtener_metodo_pago_pedido',
+                order_id: orderId
+            }, function (resp) {
+                if (resp.success && resp.data.metodo) {
+                    $btn.attr('data-metodo', resp.data.metodo);
+                    $btn.attr('data-loaded', 'true');
+                }
+            });
+        });
+
+        $(document).on('click', '.woocommerce-button.recibir', function (e) {
+            e.preventDefault();
+            const $btn = $(this);
+            const orderId = $btn.data('order');
+
+            const waitForData = () => {
+                const metodo = $btn.data('metodo');
+                const loaded = $btn.data('loaded') === true || $btn.data('loaded') === 'true';
+                const ocObligatoria = <?php echo json_encode($oc_obligatoria === '1'); ?>;
+
+                if (!loaded) {
+                    setTimeout(waitForData, 100); // espera 100ms y vuelve a intentar
+                    return;
+                }
+
+                let html = `<p class="mb-2">¿Deseas confirmar la recepción del pedido <strong>#${orderId}</strong>?</p>`;
+
+                if (metodo === 'credito_cliente' && ocObligatoria) {
+                    html += `
+                    <div class="text-left">
+                        <label class="block font-medium mb-1">Sube tu Orden de Compra (PDF o imagen):</label>
+                        <input type="file" id="oc_file" class="swal2-file" accept="application/pdf,image/*" required />
+                    </div>`;
+                }
+
+                Swal.fire({
+                    title: 'Recibir Pedido',
+                    html: html,
+                    showCancelButton: true,
+                    confirmButtonText: 'Confirmar',
+                    focusConfirm: false,
+                    preConfirm: () => {
+                        if (metodo === 'credito_cliente' && ocObligatoria) {
+                            const fileInput = document.getElementById('oc_file');
+                            const file = fileInput?.files?.[0];
+                            if (!file) {
+                                Swal.showValidationMessage('Debes subir una orden de compra.');
+                                return false;
+                            }
+                            return { archivo: file };
+                        }
+                        return true;
+                    }
+                }).then(result => {
+                    if (!result.isConfirmed) return;
+
+                    const formData = new FormData();
+                    formData.append('action', 'ajax_recibir_pedido_credito_cliente');
+                    formData.append('order_id', orderId);
+                    if (result.value?.archivo) {
+                        formData.append('orden_compra', result.value.archivo);
+                    }
+
+                    Swal.fire({ title: 'Procesando...', didOpen: () => Swal.showLoading() });
+
+                    fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(res => res.json())
+                    .then(resp => {
+                        if (resp.success) {
+                            Swal.fire('✅ Pedido recibido', resp.data.message, 'success').then(() => {
+                                location.reload();
+                            });
+                        } else {
+                            Swal.fire('❌ Error', resp.data?.message || 'No se pudo procesar.', 'error');
+                        }
+                    })
+                    .catch(() => {
+                        Swal.fire('❌ Error', 'Error inesperado de red.', 'error');
+                    });
+                });
+            };
+
+            waitForData();
+        });
+    });
+    </script>
+    <?php
+});
+
+add_action('wp_ajax_obtener_metodo_pago_pedido', function () {
+    if (!current_user_can('read')) {
+        wp_send_json_error(['message' => 'No autorizado']);
+    }
+
+    $order_id = absint($_POST['order_id'] ?? 0);
+    if (!$order_id) {
+        wp_send_json_error(['message' => 'ID de pedido inválido']);
+    }
+
+    $order = wc_get_order($order_id);
+    if (!$order || $order->get_user_id() !== get_current_user_id()) {
+        wp_send_json_error(['message' => 'Pedido no encontrado o no permitido']);
+    }
+
+    $metodo = $order->get_payment_method();
+    wp_send_json_success(['metodo' => $metodo]);
+});
+
 add_action('enqueue_block_assets', function() {
     if (is_checkout()) {
         wp_enqueue_script(
@@ -2881,7 +3161,6 @@ add_action('enqueue_block_assets', function() {
 // Registrar el método de pago "Pago a Crédito" en WooCommerce Blocks
 // Debug: Registro del método de pago en WooCommerce Blocks
 add_action('woocommerce_blocks_payment_method_type_registration', function($payment_method_registry) {
-    error_log('🚀 woocommerce_blocks_payment_method_type_registration ejecutado');
 
     if (!class_exists('Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType')) {
         error_log('⚠️ No existe AbstractPaymentMethodType. No se puede registrar Blocks Payment.');
@@ -2902,7 +3181,6 @@ add_action('woocommerce_blocks_payment_method_type_registration', function($paym
     }
 
     $payment_method_registry->register(new WC_Gateway_Credito_Cliente_Blocks());
-    error_log('✅ Método credito_cliente registrado en WooCommerce Blocks');
 });
 
 // Debug: Cuando carga el Checkout

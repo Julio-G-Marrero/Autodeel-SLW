@@ -1,6 +1,7 @@
 <?php
 if (!defined('ABSPATH')) exit;
-
+include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
 // Enqueue Tailwind y SweetAlert
 wp_enqueue_style('tailwindcdn', 'https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css');
 wp_enqueue_script('jquery');
@@ -189,19 +190,51 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
   $(document).on('click', '.btnActualizarEstado', function() {
     const pedidoId = $(this).data('id');
     const nuevoEstado = $(this).data('estado');
+    if (nuevoEstado === 'entregado') {
+      $.post(ajaxurl, {
+        action: 'obtener_datos_pedido',
+        pedido_id: pedidoId
+      }, function (res) {
+        if (!res.success) {
+          Swal.fire('❌ Error', res.data.message, 'error');
+          return;
+        }
 
-    Swal.fire({
-      title: '¿Confirmar cambio?',
-      text: `¿Deseas cambiar a "${formatearEstado(nuevoEstado)}"?`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Sí, actualizar',
-      cancelButtonText: 'Cancelar'
-    }).then((result) => {
-      if (result.isConfirmed) {
-        actualizarEstadoArmado(pedidoId, nuevoEstado);
-      }
-    });
+        const metodo = res.data.metodo;
+        if (metodo === 'credito_cliente') {
+          Swal.fire({
+            icon: 'info',
+            title: 'Recepción por parte del cliente requerida',
+            html: 'Este pedido es a crédito. El cliente debe <b>subir su Orden de Compra</b> desde su cuenta para que el pedido se marque como <b>entregado</b> automáticamente.',
+          });
+        } else {
+          Swal.fire({
+            title: '¿Confirmar entrega?',
+            text: '¿Deseas marcar este pedido como entregado?',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, entregar'
+          }).then(result => {
+            if (result.isConfirmed) {
+              actualizarEstadoArmado(pedidoId, 'entregado');
+            }
+          });
+        }
+      });
+    } else {
+      Swal.fire({
+        title: '¿Confirmar cambio?',
+        text: `¿Deseas cambiar a "${formatearEstado(nuevoEstado)}"?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, actualizar',
+        cancelButtonText: 'Cancelar'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          actualizarEstadoArmado(pedidoId, nuevoEstado);
+        }
+      });
+    }
   });
 
   function actualizarEstadoArmado(pedidoId, nuevoEstado) {
@@ -211,10 +244,10 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
       nuevo_estado: nuevoEstado
     }, function(res) {
       if (res.success) {
-        Swal.fire('✅ Actualizado', res.data.message, 'success');
+        Swal.fire('Actualizado', res.data.message, 'success');
         cargarPedidosArmado();
       } else {
-        Swal.fire('❌ Error', res.data.message || 'No se pudo actualizar.', 'error');
+        Swal.fire('Error', res.data.message || 'No se pudo actualizar.', 'error');
       }
     });
   }

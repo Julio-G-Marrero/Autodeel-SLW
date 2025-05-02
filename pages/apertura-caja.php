@@ -87,11 +87,11 @@ jQuery(document).ready(function ($) {
     function verificarEstadoCaja() {
         $.post(ajaxurl, { action: 'ajax_estado_caja' }, function (res) {
             if (res.success && res.data.estado === 'abierta') {
-                $('#estadoCaja').html(`<p class="text-green-700 font-semibold">✅ Caja abierta desde: ${res.data.fecha}</p>`);
+                $('#estadoCaja').html(`<p class="text-green-700 font-semibold">Caja abierta desde: ${res.data.fecha}</p>`);
                 $('#btnCerrarCaja').show();
                 $('#formAperturaCaja').hide();
             } else {
-                $('#estadoCaja').html(`<p class="text-red-700 font-semibold">🔒 No hay caja abierta</p>`);
+                $('#estadoCaja').html(`<p class="text-red-700 font-semibold">No hay caja abierta</p>`);
                 $('#btnCerrarCaja').hide();
                 $('#formAperturaCaja').show();
             }

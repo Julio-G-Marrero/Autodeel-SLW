@@ -9,7 +9,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 // Agrega un contenedor para paginación
 ?>
 <div class="max-w-7xl mx-auto p-6">
-    <h2 class="text-2xl font-bold mb-6">💳 Cuentas por Cobrar</h2>
+    <h2 class="text-2xl font-bold mb-6">Cuentas por Cobrar</h2>
 
     <!-- Filtros -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -213,7 +213,7 @@ jQuery(document).ready(function($) {
             .then(r => r.json())
             .then(resp => {
                 if (resp.success) {
-                    Swal.fire('✅ Pago registrado', '', 'success');
+                    Swal.fire('Pago registrado', '', 'success');
                     cargarCuentas();
                 } else {
                     Swal.fire('❌ Error', resp.data?.message || 'No se pudo registrar el pago', 'error');

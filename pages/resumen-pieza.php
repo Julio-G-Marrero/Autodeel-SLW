@@ -160,7 +160,7 @@ document.getElementById('form-solicitud-pieza').addEventListener('submit', async
 
             Swal.fire({
                 icon: 'success',
-                title: '✅ Solicitud registrada',
+                title: 'Solicitud registrada',
                 html: `<p>Tu número de solicitud es:</p><h2 style="margin-top:10px; color:#0073aa;">#${solicitudID}</h2><p>Por favor escribe este número en la pieza física.</p>`,
                 confirmButtonText: 'Entendido'
             }).then(() => {
