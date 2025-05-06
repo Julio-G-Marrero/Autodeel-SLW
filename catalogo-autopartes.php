@@ -2565,34 +2565,36 @@ function redirigir_personalizado_al_login($redirect_to, $request, $user) {
     return $redirect_to;
 }
 
-add_filter('woocommerce_login_redirect', 'woocommerce_redireccion_personalizada', 10, 2);
+add_filter('woocommerce_login_redirect', 'redireccion_por_rol_personalizado', 10, 2);
+add_filter('login_redirect', 'redireccion_por_rol_personalizado', 10, 3);
 
-function woocommerce_redireccion_personalizada($redirect, $user) {
-    $roles = (array) $user->roles;
+function redireccion_por_rol_personalizado($redirect_to, $requested_redirect_to, $user) {
+    if (!is_wp_error($user)) {
+        $roles = (array) $user->roles;
 
-    if (in_array('rol_capturista', $roles)) {
-        return admin_url('admin.php?page=captura-productos');
+        if (in_array('rol_capturista', $roles)) {
+            return admin_url('admin.php?page=captura-productos');
+        }
+
+        if (in_array('rol_solicitudes', $roles)) {
+            return admin_url('admin.php?page=solicitudes-autopartes');
+        }
+
+        if (in_array('punto_de_venta', $roles)) {
+            return admin_url('admin.php?page=ventas-autopartes');
+        }
+
+        if (in_array('cobranza', $roles)) {
+            return admin_url('admin.php?page=cuentas-por-cobrar');
+        }
+        
+        if (in_array('almacenista', $roles)) {
+            return admin_url('admin.php?page=gestion-pedidos');
+        }
     }
 
-    if (in_array('rol_solicitudes', $roles)) {
-        return admin_url('admin.php?page=solicitudes-autopartes');
-    }
-
-    if (in_array('punto_de_venta', $roles)) {
-        return admin_url('admin.php?page=ventas-autopartes');
-    }
-    
-    if (in_array('cobranza', $roles)) {
-        return admin_url('admin.php?page=cuentas-por-cobrar');
-    }
-
-    if (in_array('cobranza', $roles)) {
-        return admin_url('admin.php?page=gestion-armado');
-    }
-
-    return $redirect;
+    return $redirect_to;
 }
-
 
 //Funcionalida para credito 
 // Agregar Gateway Personalizado de Pago a Crédito
@@ -2864,7 +2866,7 @@ add_action('woocommerce_admin_order_data_after_billing_address', function($order
     }
 }, 10, 1);
 add_action('template_redirect', function() {
-    if (is_checkout()) {
+    if (function_exists('is_checkout') && is_checkout()) {
         $user_id = get_current_user_id();
         if ($user_id) {
             $estado_credito = get_user_meta($user_id, 'estado_credito', true);
@@ -2873,6 +2875,7 @@ add_action('template_redirect', function() {
         }
     }
 });
+
 // Habilitar el método de pago "credito_cliente" en WooCommerce Blocks
 add_action('woocommerce_blocks_loaded', function() {
     if (!class_exists('Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType')) {
@@ -3206,6 +3209,102 @@ add_action('enqueue_block_assets', function() {
         wp_localize_script('wc-credito-cliente-blocks-js', 'wp_oc_obligatoria', $oc_obligatoria);
     }
 });
+// Listar ubicaciones
+add_action('wp_ajax_obtener_lista_ubicaciones', function () {
+    global $wpdb;
+
+    $tabla = $wpdb->prefix . 'ubicaciones_autopartes';
+    $ubicaciones = $wpdb->get_results("SELECT id, nombre, descripcion FROM $tabla");
+
+    wp_send_json_success($ubicaciones);
+});
+
+// Mostrar historial de productos asignados
+add_action('wp_ajax_historial_productos_asignados', function () {
+    global $wpdb;
+
+    $ubicacion = sanitize_text_field($_GET['ubicacion'] ?? '');
+
+    $args = [
+        'post_type'      => 'product',
+        'post_status'    => 'publish',
+        'posts_per_page' => -1,
+        'meta_query'     => [],
+    ];
+
+    // Sin ubicación
+    if ($ubicacion === '__sin_ubicacion__') {
+        $args['meta_query'][] = [
+            'key'     => '_ubicacion_fisica',
+            'compare' => 'NOT EXISTS'
+        ];
+    }
+    // Ubicación específica
+    elseif ($ubicacion) {
+        $ubicacion_id = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}ubicaciones_autopartes WHERE nombre = %s LIMIT 1",
+            $ubicacion
+        ));
+
+        $args['meta_query'][] = [
+            'relation' => 'OR',
+            [
+                'key'     => '_ubicacion_fisica',
+                'value'   => $ubicacion,
+                'compare' => '='
+            ],
+            [
+                'key'     => '_ubicacion_fisica',
+                'value'   => strval($ubicacion_id),
+                'compare' => '='
+            ]
+        ];
+    }
+    // Todos los que tienen ubicación asignada
+    else {
+        $args['meta_query'][] = [
+            'key'     => '_ubicacion_fisica',
+            'compare' => 'EXISTS'
+        ];
+    }
+
+    $query = new WP_Query($args);
+    $resultados = [];
+
+    foreach ($query->posts as $post) {
+        $product = wc_get_product($post->ID);
+
+        // ✅ Validar stock positivo
+        if (!$product || !$product->is_in_stock() || $product->get_stock_quantity() <= 0) {
+            continue;
+        }
+
+        $ubicacion_meta = get_post_meta($product->get_id(), '_ubicacion_fisica', true);
+        $ubicacion_real = $ubicacion_meta;
+
+        if (is_numeric($ubicacion_meta)) {
+            $ubicacion_obj = $wpdb->get_row(
+                $wpdb->prepare("SELECT nombre FROM {$wpdb->prefix}ubicaciones_autopartes WHERE id = %d", $ubicacion_meta)
+            );
+            if ($ubicacion_obj) {
+                $ubicacion_real = $ubicacion_obj->nombre;
+            }
+        }
+
+        $resultados[] = [
+            'id'          => $product->get_id(),
+            'sku'         => $product->get_sku(),
+            'nombre'      => $product->get_name(),
+            'descripcion' => $product->get_description(),
+            'ubicacion'   => $ubicacion_real ?: '',
+            'imagen'      => wp_get_attachment_image_url($product->get_image_id(), 'full'),
+            'url'         => get_permalink($product->get_id()),
+        ];
+    }
+
+    wp_send_json_success($resultados);
+});
+
 
 add_action('admin_enqueue_scripts', 'catalogo_autopartes_enqueue_scripts');
 add_action('wp_ajax_ajax_enviar_solicitud_pieza', 'ajax_guardar_solicitud_pieza');

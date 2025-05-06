@@ -63,6 +63,48 @@ global $wpdb;
     </div>
 </div>
 
+<div id="contenedorHistorialAsignados" class="mt-10 border-t pt-6">
+    <h3 class="text-lg font-semibold mb-4 text-gray-800">Productos asignados por ubicación</h3>
+
+    <!-- Filtro por ubicación -->
+    <div class="mb-4">
+        <label for="filtroUbicacion" class="block text-sm font-medium text-gray-700 mb-1">Selecciona una ubicación:</label>
+        <select id="filtroUbicacion" class="w-full border-gray-300 rounded-md shadow-sm focus:ring focus:border-blue-300">
+            <option value="">— Ver todas —</option>
+        </select>
+    </div>
+    <div id="resumenUbicacion" class="text-sm text-gray-600 mb-4">
+        Total de productos encontrados: <strong><span id="conteoProductosUbicacion">0</span></strong>
+    </div>
+    <div class="mb-4">
+        <label for="inputBusquedaUbicacion" class="block text-sm font-medium text-gray-700 mb-1">
+            Buscar producto por nombre o SKU:
+        </label>
+        <input
+            type="text"
+            id="inputBusquedaUbicacion"
+            placeholder="Ej. 019-1301-00 o calavera jetta"
+            class="w-full border-gray-300 rounded-md shadow-sm px-3 py-2 focus:ring focus:border-blue-300"
+        />
+    </div>
+
+    <!-- Tabla de historial -->
+    <div class="overflow-x-auto">
+        <table class="min-w-full border text-sm bg-white rounded shadow-sm">
+            <thead class="bg-gray-100 text-gray-700 uppercase text-xs">
+                <tr>
+                    <th class="text-left px-4 py-2 border-b">Imagen</th>
+                    <th class="text-left px-4 py-2 border-b">SKU</th>
+                    <th class="text-left px-4 py-2 border-b">Titulo</th>
+                    <!-- <th class="text-left px-4 py-2 border-b">Descripción</th> -->
+                    <th class="text-left px-4 py-2 border-b">Ubicación</th>
+                </tr>
+            </thead>
+            <tbody id="tablaHistorialAsignados" class="text-gray-800"></tbody>
+        </table>
+    </div>
+</div>
+
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- SweetAlert2 CDN -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -123,6 +165,7 @@ document.getElementById('scanInput').addEventListener('change', function () {
 
                     document.getElementById('ubicacionActiva').classList.remove('hidden');
                     document.getElementById('productosAsignados').classList.remove('hidden');
+                    document.getElementById('contenedorHistorialAsignados')?.classList.add('hidden');
                     productosEscaneados = [];
                     renderTabla();
                 } else {
@@ -278,12 +321,117 @@ document.getElementById('btnFinalizar').addEventListener('click', function () {
                 text: 'Hubo un problema al asignar los productos.'
             });
         }
+        document.getElementById('contenedorHistorialAsignados')?.classList.remove('hidden');
     });
 });
+// 🔄 Cargar ubicaciones en el select
+function cargarUbicacionesEnFiltro() {
+    fetch("<?= admin_url('admin-ajax.php') ?>?action=obtener_lista_ubicaciones")
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                const select = document.getElementById('filtroUbicacion');
+
+                // Agrega opción especial para productos sin ubicación
+                const sinUbicacion = document.createElement('option');
+                sinUbicacion.value = '__sin_ubicacion__';
+                sinUbicacion.textContent = '— Sin ubicación —';
+                select.appendChild(sinUbicacion);
+
+                // Agrega todas las ubicaciones disponibles
+                data.data.forEach(ub => {
+                    const option = document.createElement('option');
+                    option.value = ub.nombre;
+                    option.textContent = `${ub.nombre} (${ub.descripcion})`;
+                    select.appendChild(option);
+                });
+            }
+        });
+}
+
+// 📦 Mostrar historial asignados
+function cargarHistorialAsignados(ubicacion = '') {
+    fetch("<?= admin_url('admin-ajax.php') ?>?action=historial_productos_asignados&ubicacion=" + encodeURIComponent(ubicacion))
+        .then(res => res.json())
+        .then(data => {
+            const tbody = document.getElementById('tablaHistorialAsignados');
+            tbody.innerHTML = '';
+
+            const total = data.data.length;
+            document.getElementById('conteoProductosUbicacion').textContent = total;
+
+            if (data.success && total > 0) {
+                data.data.forEach(prod => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>
+                            <img 
+                                src="${prod.imagen || ''}" 
+                                width="50" 
+                                style="border-radius:4px;cursor:pointer;"
+                                onclick="mostrarImagenProducto('${prod.imagen}', '${prod.nombre}')"
+                            >
+                        </td>
+                        <td>${prod.sku}</td>
+                        <td>${prod.nombre}</td>
+                        <td class="hidden">${prod.descripcion}</td>
+                        <td>${prod.ubicacion || '<em>—</em>'}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } else {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-gray-500 py-4">No hay productos asignados.</td></tr>`;
+            }
+        });
+}
+
+// 🎯 Inicializar historial y eventos
+document.addEventListener('DOMContentLoaded', () => {
+    cargarUbicacionesEnFiltro();
+    cargarHistorialAsignados();
+
+    document.getElementById('filtroUbicacion').addEventListener('change', function () {
+        cargarHistorialAsignados(this.value);
+    });
+    document.getElementById('inputBusquedaUbicacion').addEventListener('input', function () {
+        const filtro = this.value.trim().toLowerCase();
+        const filas = document.querySelectorAll('#tablaHistorialAsignados tr');
+
+        filas.forEach(fila => {
+            const celdaSKU = fila.querySelector('td:nth-child(2)');
+            const celdaNombre = fila.querySelector('td:nth-child(3)');
+
+            const textoSKU = celdaSKU?.textContent.trim().toLowerCase() || '';
+            const textoNombre = celdaNombre?.textContent.trim().toLowerCase() || '';
+
+            const coincide = textoSKU.includes(filtro) || textoNombre.includes(filtro);
+            fila.style.display = coincide ? '' : 'none';
+        });
+    });
+});
+function mostrarImagenProducto(imagenUrl, titulo) {
+    if (!imagenUrl) return;
+
+    Swal.fire({
+        title: titulo,
+        imageUrl: imagenUrl,
+        imageAlt: titulo,
+        imageWidth: 'auto',
+        imageHeight: 400,
+        showCloseButton: true,
+        confirmButtonText: 'Cerrar',
+        customClass: {
+            popup: 'swal2-popup-producto'
+        }
+    });
+}
 </script>
 <style>
     .swal-custom-margin {
         margin-top: 70px !important; /* o el valor que necesites */
+    }
+    .swal2-popup-producto {
+        max-width: 700px !important;
     }
     .qr-panel {
         background: #f9f9f9;
