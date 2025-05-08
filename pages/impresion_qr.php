@@ -24,8 +24,8 @@ $solicitudes_aprobadas = $wpdb->get_results("
 
 ?>
 
-<div class="wrap">
-    <h2 style="font-size: 24px; margin-bottom: 20px;">🧾 Impresión de Códigos QR de Autopartes Aprobadas</h2>
+<div class="wrap ml-8">
+    <h2 style="font-size: 24px; margin-bottom: 20px;">Impresión de Códigos QR de Autopartes Aprobadas</h2>
 
     <!-- Panel de Configuración de Impresión -->
     <div id="panelConfiguracion" style="margin-bottom: 20px; padding: 10px; border: 1px solid #ccc; border-radius: 6px;">

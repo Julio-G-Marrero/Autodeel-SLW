@@ -200,7 +200,6 @@ function catalogo_autopartes_menu() {
         null, // No aparece en el menú lateral
         'Armado de Pedido',
         'Armado de Pedido',
-        'manage_options',
         'armado_de_pedido',
         'armado-pedido',
         function () {

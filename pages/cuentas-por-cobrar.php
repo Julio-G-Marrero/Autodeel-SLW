@@ -12,7 +12,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
     <h2 class="text-2xl font-bold mb-6">Cuentas por Cobrar</h2>
 
     <!-- Filtros -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <input type="text" id="filtroCliente" placeholder="Buscar cliente..." class="border px-3 py-2 rounded w-full">
         <select id="filtroEstado" class="border px-3 py-2 rounded w-full">
             <option value="">Todos los estados</option>
@@ -23,7 +23,11 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
         </select>
         <input type="date" id="filtroDesde" class="border px-3 py-2 rounded w-full">
         <input type="date" id="filtroHasta" class="border px-3 py-2 rounded w-full">
+        <button id="btnBuscarCuentas" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+            Buscar
+        </button>
     </div>
+
 
     <!-- Tabla -->
     <div class="overflow-x-auto bg-white shadow rounded">
@@ -57,6 +61,9 @@ jQuery(document).ready(function($) {
     let pagina = 1;
 
     function cargarCuentas() {
+        const $btn = $('#btnBuscarCuentas');
+        $btn.prop('disabled', true).text('Buscando...');
+
         const cliente = $('#filtroCliente').val();
         const estado = $('#filtroEstado').val();
         const desde = $('#filtroDesde').val();
@@ -66,55 +73,57 @@ jQuery(document).ready(function($) {
             action: 'ajax_obtener_cuentas_cobrar',
             cliente, estado, desde, hasta, pagina
         }, function(res) {
+            const $tabla = $('#tablaCuentasCXC');
+
             if (!res.success || res.data.cuentas.length === 0) {
-                $('#tablaCuentasCXC').html('<tr><td colspan="7" class="text-center py-4">No hay resultados</td></tr>');
-                return;
+                $tabla.html('<tr><td colspan="8" class="text-center py-4">No hay resultados</td></tr>');
+            } else {
+                let html = '';
+                res.data.cuentas.forEach(c => {
+                    const pagado = parseFloat(c.monto_pagado.replace(/,/g, ''));
+                    const pendiente = parseFloat(c.saldo_pendiente.replace(/,/g, ''));
+                    const estado = c.estado.charAt(0).toUpperCase() + c.estado.slice(1);
+
+                    const btnPago = pendiente > 0
+                        ? `<button class="registrar-pago bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded w-full" 
+                                    data-id="${c.id}" 
+                                    data-cliente="${c.cliente}" 
+                                    data-pendiente="${pendiente}">
+                                Registrar Pago
+                        </button>`
+                        : `<span class="text-green-600 font-semibold text-xs block text-center">Pagado</span>`;
+
+                    const btnOC = c.orden_compra_url
+                        ? `<a href="${c.orden_compra_url}" target="_blank" 
+                            class="text-blue-600 hover:underline text-xs block mt-1 text-center">Ver OC</a>`
+                        : '';
+
+                    html += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="px-4 py-2">${c.cliente}</td>
+                            <td class="px-4 py-2 text-green-600">$${c.monto_total}</td>
+                            <td class="px-4 py-2">$${c.monto_pagado}</td>
+                            <td class="px-4 py-2">$${c.saldo_pendiente}</td>
+                            <td class="px-4 py-2">${c.fecha_limite_pago}</td>
+                            <td class="px-4 py-2 capitalize">${estado}</td>
+                            <td class="px-4 py-2 text-center">${btnPago}${btnOC}</td>
+                            <td class="px-4 py-2 text-center">
+                                <a href="#" class="ver-historial text-blue-600 hover:underline text-xs" 
+                                data-id="${c.id}" 
+                                data-cliente="${c.cliente}">
+                                    Ver Historial
+                                </a>
+                            </td>
+                        </tr>`;
+                });
+                $tabla.html(html);
             }
 
-
-            let html = '';
-            res.data.cuentas.forEach(c => {
-                let historialBtn = `
-                <button class="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-1 rounded ver-historial"
-                    data-id="${c.id}" data-cliente="${c.cliente}">
-                    📄 Ver
-                </button>`;
-                let estadoColor = 'text-gray-600';
-                if (c.estado === 'vencido') estadoColor = 'text-red-600 font-semibold';
-                if (c.estado === 'bloqueado') estadoColor = 'text-orange-600 font-semibold';
-                if (c.estado === 'pagado') estadoColor = 'text-green-600 font-semibold';
-
-                let accion = '';
-                if (c.estado === 'pagado') {
-                    accion = '<span class="text-gray-500 italic">Sin acción pendiente</span>';
-                } else if (c.estado === 'bloqueado') {
-                    accion = '<span class="text-orange-600 italic">Crédito bloqueado</span>';
-                } else {
-                    accion = `<button class="bg-green-600 text-white text-sm px-3 py-1 rounded registrar-pago" 
-                        data-id="${c.id}" data-cliente="${c.cliente}" data-pendiente="${c.saldo_pendiente.replace(/,/g, '')}">
-                        Registrar Pago
-                    </button>`;
-                }
-
-                // ✅ Mostrar botón para ver la OC si existe
-                if (c.orden_compra_url) {
-                    accion += `<br><a href="${c.orden_compra_url}" target="_blank" class="text-blue-600 underline text-sm mt-1 inline-block">📎 Ver OC</a>`;
-                }
-                html += `
-                    <tr class="border-b">
-                        <td class="px-4 py-2">${c.cliente}</td>
-                        <td class="px-4 py-2">$${c.monto_total}</td>
-                        <td class="px-4 py-2">$${c.monto_pagado}</td>
-                        <td class="px-4 py-2">$${c.saldo_pendiente}</td>
-                        <td class="px-4 py-2">${c.fecha_limite_pago}</td>
-                        <td class="px-4 py-2 capitalize ${estadoColor}">${c.estado}</td>
-                        <td class="px-4 py-2 text-center">${accion}</td>
-                        <td class="px-4 py-2 text-center">${historialBtn}</td>
-                    </tr>`;
-            });
-
-            $('#tablaCuentasCXC').html(html);
             $('#paginaActual').text(pagina);
+            $btn.prop('disabled', false).text('Buscar');
+        }).fail(function() {
+            Swal.fire('❌ Error', 'No se pudo cargar la información.', 'error');
+            $btn.prop('disabled', false).text('Buscar');
         });
     }
 
@@ -297,10 +306,11 @@ jQuery(document).ready(function($) {
         });
     });
 
-    $('#filtroCliente, #filtroEstado, #filtroDesde, #filtroHasta').on('change input', function() {
+    $('#btnBuscarCuentas').on('click', function () {
         pagina = 1;
         cargarCuentas();
     });
+
 
     $('#btnAnterior').on('click', function() {
         if (pagina > 1) {

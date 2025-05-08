@@ -8,7 +8,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 ?>
 
 <div class="max-w-4xl mx-auto p-6 bg-white rounded shadow mt-6">
-    <h2 class="text-2xl font-bold mb-6">🧾 Apertura / Cierre de Caja</h2>
+    <h2 class="text-2xl font-bold mb-6">Apertura / Cierre de Caja</h2>
 
     <div id="estadoCaja" class="mb-6"></div>
 
@@ -20,7 +20,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
             echo "<div>
                     <label class='block text-sm font-medium mb-1'>$ {$den}</label>
                     <input type='number' name='denominaciones[$den]' value='0' min='0' class='w-full border rounded px-3 py-2'/>
-                  </div>";
+                </div>";
         }
         ?>
         <div class="col-span-full">
@@ -52,7 +52,7 @@ jQuery(document).ready(function ($) {
 
         const html = `
             <div id="ticketCierreCaja" class="p-6 max-w-md mx-auto bg-white border border-gray-300 rounded shadow text-sm font-mono">
-                <h2 class="text-xl font-bold text-center mb-1">🧾 Corte de Caja</h2>
+                <h2 class="text-xl font-bold text-center mb-1">Corte de Caja</h2>
                 <p class="text-center mb-2"><strong>Folio:</strong> #${resumen.id}</p>
 
                 <p><strong>Usuario:</strong> ${usuario}</p>
@@ -70,7 +70,7 @@ jQuery(document).ready(function ($) {
                     <tbody>${denominacionesTexto}</tbody>
                 </table>
                 <div class="text-center mt-4 no-print">
-                    <button onclick="window.print()" class="bg-black text-white px-4 py-1 rounded text-sm">🖨️ Imprimir Ticket</button>
+                    <button onclick="window.print()" class="bg-black text-white px-4 py-1 rounded text-sm">Imprimir Ticket</button>
                 </div>
             </div>
         `;
@@ -172,7 +172,7 @@ jQuery(document).ready(function ($) {
 
         const html = `
             <div id="ticketAperturaContenido" class="text-sm font-mono">
-                <h2 class="text-lg font-bold text-center mb-2">🧾 Ticket Apertura Caja</h2>
+                <h2 class="text-lg font-bold text-center mb-2">Ticket Apertura Caja</h2>
                 <p><strong>Usuario:</strong> ${usuario}</p>
                 <p><strong>Fecha:</strong> ${resumen.fecha_apertura}</p>
                 <p><strong>Monto Inicial:</strong> $${resumen.monto_inicial.toFixed(2)}</p>
@@ -183,7 +183,7 @@ jQuery(document).ready(function ($) {
                     <tbody>${desglose}</tbody>
                 </table>
                 <div class="text-center mt-4">
-                    <button id="btnImprimirTicketApertura" class="bg-black text-white px-4 py-1 rounded text-sm">🖨️ Imprimir</button>
+                    <button id="btnImprimirTicketApertura" class="bg-black text-white px-4 py-1 rounded text-sm">Imprimir</button>
                 </div>
             </div>
         `;

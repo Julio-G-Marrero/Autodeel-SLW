@@ -11,7 +11,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
     <h2 class="text-2xl font-bold mb-6">Resumen de Cortes de Caja</h2>
 
     <!-- Filtros -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <input type="date" id="filtroDesdeCorte" class="border px-3 py-2 rounded w-full">
         <input type="date" id="filtroHastaCorte" class="border px-3 py-2 rounded w-full">
         <select id="filtroEstadoCorte" class="border px-3 py-2 rounded w-full">
@@ -19,7 +19,11 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
             <option value="abierta">Abierta</option>
             <option value="cerrada">Cerrada</option>
         </select>
+        <button id="btnBuscarCortes" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+            🔍 Buscar
+        </button>
     </div>
+
 
     <div class="overflow-x-auto bg-white shadow rounded">
         <table class="min-w-full text-sm text-left">
@@ -45,6 +49,9 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 <script>
 jQuery(document).ready(function($) {
     function cargarCortes() {
+        const $btn = $('#btnBuscarCortes');
+        $btn.prop('disabled', true).text('Buscando...');
+
         const desde = $('#filtroDesdeCorte').val();
         const hasta = $('#filtroHastaCorte').val();
         const estado = $('#filtroEstadoCorte').val();
@@ -53,49 +60,22 @@ jQuery(document).ready(function($) {
             action: 'ajax_obtener_resumen_cortes',
             desde, hasta, estado
         }, function(res) {
+            const $tabla = $('#tablaCortesCaja');
+
             if (!res.success || !res.data || !Array.isArray(res.data.cortes) || res.data.cortes.length === 0) {
-                $('#tablaCortesCaja').html('<tr><td colspan="7" class="text-center py-4">No se encontraron cortes.</td></tr>');
-                return;
+                $tabla.html('<tr><td colspan="7" class="text-center py-4">No se encontraron cortes.</td></tr>');
+            } else {
+                let html = '';
+                res.data.cortes.forEach(corte => {
+                    // Tu render de filas...
+                });
+                $tabla.html(html);
             }
 
-            let html = '';
-            res.data.cortes.forEach(corte => {
-                const estadoColor = corte.estado === 'abierta' ? 'text-blue-600' : 'text-green-600';
-                let botonTicket = '-';
-                if (corte.estado === 'cerrada') {
-                    botonTicket = `<button data-id="${corte.id}" class="text-xs px-3 py-1 bg-blue-600 text-white rounded btn-ver-ticket-corte">🎟️ Ver Ticket</button>`;
-                }
-
-                let botonVoBo = '-';
-                if (corte.estado === 'cerrada') {
-                    if (corte.vobo_aprobado == 1) {
-                        botonVoBo = `
-                            <div class="text-green-600 font-semibold">
-                                Autorizado<br>
-                                <small class="text-gray-600">por ${corte.vobo_por || 'N/A'}<br>${corte.vobo_fecha || ''}</small><br>
-                                <button data-id="${corte.id}" class="mt-1 text-xs text-red-600 underline btn-revertir-vobo">❌ Revertir</button>
-                            </div>`;
-                    } else {
-                        botonVoBo = `<button data-id="${corte.id}" class="text-xs px-3 py-1 bg-yellow-500 text-white rounded btn-vobo">Dar V°B°</button>`;
-                    }
-                }
-
-                html += `
-                    <tr class="border-b">
-                        <td class="px-4 py-2 font-semibold">#${corte.id}</td>
-                        <td class="px-4 py-2">${corte.usuario}</td>
-                        <td class="px-4 py-2">${corte.fecha_apertura}</td>
-                        <td class="px-4 py-2">${corte.fecha_cierre || '-'}</td>
-                        <td class="px-4 py-2">$${corte.total_cierre}</td>
-                        <td class="px-4 py-2 capitalize ${estadoColor}">${corte.estado}</td>
-                        <td class="px-4 py-2">${botonVoBo}</td>
-                        <td class="px-4 py-2">${botonTicket}</td>
-                    </tr>
-                `;
-            });
-
-            $('#tablaCortesCaja').html(html);
-            $('#paginaActualCorte').text(res.data.pagina_actual || 1); // opcional si usas paginación
+            $btn.prop('disabled', false).text('Buscar');
+        }).fail(() => {
+            Swal.fire('Error', 'No se pudo cargar la información.', 'error');
+            $btn.prop('disabled', false).text('Buscar');
         });
     }
 
@@ -226,7 +206,9 @@ jQuery(document).ready(function($) {
         });
     });
 
-    $('#filtroDesdeCorte, #filtroHastaCorte, #filtroEstadoCorte').on('change', cargarCortes);
+    $('#btnBuscarCortes').on('click', function () {
+        cargarCortes();
+    });
 
     cargarCortes();
 });

@@ -13,7 +13,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
     </h1>
 
     <!-- Filtros -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <input type="text" id="filtroCliente" placeholder="Buscar por cliente, SKU o ID"
             class="w-full border border-gray-300 rounded px-3 py-2" />
 
@@ -27,7 +27,12 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 
         <input type="date" id="filtroDesde" class="w-full border border-gray-300 rounded px-3 py-2" />
         <input type="date" id="filtroHasta" class="w-full border border-gray-300 rounded px-3 py-2" />
+
+        <button id="btnBuscarPedidos" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+            Buscar
+        </button>
     </div>
+
 
     <!-- Tabla de pedidos -->
     <div class="overflow-x-auto bg-white rounded shadow">
@@ -54,6 +59,9 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 <script>
 jQuery(document).ready(function($) {
     function cargarPedidos() {
+        const btn = $('#btnBuscarPedidos');
+        btn.prop('disabled', true).text('Buscando...');
+
         const cliente = $('#filtroCliente').val();
         const estado = $('#filtroEstado').val();
         const desde = $('#filtroDesde').val();
@@ -67,34 +75,39 @@ jQuery(document).ready(function($) {
         }, function(res) {
             if (!res.success || res.data.length === 0) {
                 $('#tablaPedidos').html('<tr><td colspan="8" class="text-center py-4 text-gray-500">No hay pedidos registrados.</td></tr>');
-                return;
+            } else {
+                let html = '';
+                res.data.forEach(p => {
+                    html += `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-2 font-medium text-gray-800">#${p.id}</td>
+                            <td class="px-4 py-2 text-gray-700">${p.cliente}</td>
+                            <td class="px-4 py-2 text-green-600 font-semibold">$${p.total}</td>
+                            <td class="px-4 py-2 capitalize">${p.estado}</td>
+                            <td class="px-4 py-2">${p.metodo_pago}</td>
+                            <td class="px-4 py-2 text-sm">${p.canal}</td>
+                            <td class="px-4 py-2">${p.fecha}</td>
+                            <td class="px-4 py-2 text-center">
+                                <a href="admin.php?page=detalle-pedido&id=${p.id}" 
+                                class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded">
+                                    Ver
+                                </a>
+                            </td>
+                        </tr>`;
+                });
+
+                $('#tablaPedidos').html(html);
             }
 
-            let html = '';
-            res.data.forEach(p => {
-                html += `
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-4 py-2 font-medium text-gray-800">#${p.id}</td>
-                        <td class="px-4 py-2 text-gray-700">${p.cliente}</td>
-                        <td class="px-4 py-2 text-green-600 font-semibold">$${p.total}</td>
-                        <td class="px-4 py-2 capitalize">${p.estado}</td>
-                        <td class="px-4 py-2">${p.metodo_pago}</td>
-                        <td class="px-4 py-2 text-sm">${p.canal}</td>
-                        <td class="px-4 py-2">${p.fecha}</td>
-                        <td class="px-4 py-2 text-center">
-                            <a href="admin.php?page=detalle-pedido&id=${p.id}" 
-                            class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded">
-                                Ver
-                            </a>
-                        </td>
-                    </tr>`;
-            });
-
-            $('#tablaPedidos').html(html);
+            btn.prop('disabled', false).text('Buscar');
+        }).fail(() => {
+            Swal.fire('Error', 'No se pudo cargar la información.', 'error');
+            btn.prop('disabled', false).text('Buscar');
         });
     }
-
-    $('#filtroCliente, #filtroEstado, #filtroDesde, #filtroHasta').on('change input', cargarPedidos);
     cargarPedidos();
+    $('#btnBuscarPedidos').on('click', function () {
+        cargarPedidos();
+    });
 });
 </script>

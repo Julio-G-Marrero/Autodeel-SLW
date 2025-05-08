@@ -7,13 +7,16 @@ include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar
 global $wpdb;
 
 ?>
-<div class="max-w-4xl mx-auto px-4 py-6">
+<div class="max-w-4xl px-4 pt-6">
     <h2 class="text-2xl font-bold mb-6 text-gray-800">Asignar Productos a Ubicaciones (por QR)</h2>
 
-    <!-- Botón de cámara -->
-    <button id="btnEscanearQR" class="bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-800 transition mb-4">
-        Activar cámara
-    </button>
+    <div>
+        <p class="mb-3 italic">Activa la camara para escanear el qr de la ubicación y del producto.**<p>
+        <!-- Botón de cámara -->
+        <button id="btnEscanearQR" class="bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-800 transition mb-4">
+            Activar cámara
+        </button>
+    </div>
 
     <!-- Área del escáner -->
     <div id="scanner" class="hidden mb-6 border border-gray-300 rounded p-4 bg-white w-full max-w-sm"></div>
@@ -23,7 +26,7 @@ global $wpdb;
         type="text"
         id="scanInput"
         placeholder="Escanea una ubicación o producto..."
-        class="w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring focus:border-blue-300 mb-6"
+        class="w-full hidden px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring focus:border-blue-300 mb-6"
         autofocus
     />
 
@@ -63,7 +66,7 @@ global $wpdb;
     </div>
 </div>
 
-<div id="contenedorHistorialAsignados" class="mt-10 border-t pt-6">
+<div id="contenedorHistorialAsignados" class="wrap border-t ml-8 mr-8">
     <h3 class="text-lg font-semibold mb-4 text-gray-800">Productos asignados por ubicación</h3>
 
     <!-- Filtro por ubicación -->

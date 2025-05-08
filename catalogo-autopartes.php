@@ -956,6 +956,46 @@ function ajax_cambiar_estado_armado() {
 
 add_action('wp_ajax_ajax_cambiar_estado_armado', 'ajax_cambiar_estado_armado');
 
+add_action('wp_ajax_agregar_nota_interna', function () {
+    $order_id = intval($_POST['order_id']);
+    $contenido = sanitize_text_field($_POST['contenido']);
+
+    if (!$order_id || !$contenido) {
+        wp_send_json_error();
+    }
+
+    $order = wc_get_order($order_id);
+    if (!$order) wp_send_json_error();
+
+    $note_id = $order->add_order_note($contenido, false); // false = nota interna
+
+    wp_send_json_success([
+        'nota' => esc_html($contenido),
+        'fecha' => current_time('Y-m-d H:i')
+    ]);
+});
+
+add_action('wp_ajax_agregar_nota_interna_pedido', function () {
+    if (!current_user_can('edit_shop_orders')) {
+        wp_send_json_error(['message' => 'Sin permisos']);
+    }
+
+    $order_id = intval($_POST['order_id']);
+    $nota = sanitize_text_field($_POST['nota']);
+
+    if (!$order_id || !$nota) {
+        wp_send_json_error(['message' => 'Datos incompletos']);
+    }
+
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        wp_send_json_error(['message' => 'Pedido no encontrado']);
+    }
+
+    $order->add_order_note($nota, false); // false = nota privada
+    wp_send_json_success(['message' => 'Nota guardada']);
+});
+
 add_action('wp_ajax_ajax_obtener_pedidos', 'ajax_obtener_pedidos');
 function ajax_obtener_pedidos() {
     if (!current_user_can('manage_woocommerce')) {
@@ -1300,6 +1340,7 @@ add_action('wp_ajax_ajax_autorizar_vobo_corte', function () {
 });
 
 add_action('wp_ajax_ajax_registrar_pago_cxc', 'ajax_registrar_pago_cxc');
+
 function ajax_registrar_pago_cxc() {
     global $wpdb;
 
@@ -1320,33 +1361,44 @@ function ajax_registrar_pago_cxc() {
         wp_send_json_error(['message' => 'Cuenta por cobrar no encontrada.']);
     }
 
-    $nuevo_pagado = floatval($cuenta->monto_pagado) + $monto;
-    $nuevo_saldo = max(0, floatval($cuenta->saldo_pendiente) - $monto);
-    $nuevo_estado = $nuevo_saldo <= 0 ? 'pagado' : 'pendiente';
+    $saldo_actual = floatval($cuenta->saldo_pendiente);
+    if ($monto > $saldo_actual) {
+        wp_send_json_error(['message' => 'El monto pagado excede el saldo pendiente actual.']);
+    }
 
-    // ✅ Manejo del archivo de comprobante
+    // ✅ Subir comprobante si se envió
     $comprobante_url = '';
     if (!empty($_FILES['comprobante_pago']['name'])) {
         require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
 
-        $allowed_types = ['image/jpeg', 'image/png', 'application/pdf'];
-        $file_type = $_FILES['comprobante_pago']['type'];
+        $file = $_FILES['comprobante_pago'];
+        $allowed = ['image/jpeg', 'image/png', 'application/pdf'];
 
-        if (!in_array($file_type, $allowed_types)) {
-            wp_send_json_error(['message' => 'Formato de comprobante no permitido. Usa JPG, PNG o PDF.']);
+        if (!in_array($file['type'], $allowed)) {
+            wp_send_json_error(['message' => 'Formato no permitido. Usa JPG, PNG o PDF.']);
         }
 
-        $upload = wp_handle_upload($_FILES['comprobante_pago'], ['test_form' => false]);
-        if (isset($upload['url'])) {
+        // Comprimir si es imagen
+        if (in_array($file['type'], ['image/jpeg', 'image/png'])) {
+            $editor = wp_get_image_editor($file['tmp_name']);
+            if (!is_wp_error($editor)) {
+                $editor->resize(1200, 1200, false);
+                $editor->set_quality(75);
+                $editor->save($file['tmp_name']);
+            }
+        }
+
+        $upload = wp_handle_upload($file, ['test_form' => false]);
+        if (!empty($upload['url'])) {
             $comprobante_url = esc_url_raw($upload['url']);
         } else {
             wp_send_json_error(['message' => 'Error al subir el comprobante.']);
         }
     }
-    if ($monto > floatval($cuenta->saldo_pendiente)) {
-        wp_send_json_error(['message' => 'El monto pagado excede el saldo pendiente.']);
-    }
-    // ✅ Insertar pago
+
+    // 🧾 Insertar pago
     $wpdb->insert("{$wpdb->prefix}pagos_cxc", [
         'cuenta_id'       => $cuenta_id,
         'monto_pagado'    => $monto,
@@ -1356,60 +1408,58 @@ function ajax_registrar_pago_cxc() {
         'comprobante_url' => $comprobante_url
     ]);
 
-    // ✅ Actualizar la cuenta
+    // 🔄 Actualizar cuenta
+    $nuevo_pagado = floatval($cuenta->monto_pagado) + $monto;
+    $nuevo_saldo  = max(0, $saldo_actual - $monto);
+    $estado       = $nuevo_saldo <= 0 ? 'pagado' : 'pendiente';
+
     $wpdb->update("{$wpdb->prefix}cuentas_cobrar", [
-        'monto_pagado'     => $nuevo_pagado,
-        'saldo_pendiente'  => $nuevo_saldo,
-        'estado'           => $nuevo_estado
+        'monto_pagado'    => $nuevo_pagado,
+        'saldo_pendiente' => $nuevo_saldo,
+        'estado'          => $estado
     ], ['id' => $cuenta_id]);
 
-    wp_send_json_success(['message' => 'Pago registrado correctamente.']);
+    wp_send_json_success(['message' => '✅ Pago registrado correctamente.']);
 }
 
 add_action('wp_ajax_ajax_validar_credito_cliente', 'ajax_validar_credito_cliente');
+
 function ajax_validar_credito_cliente() {
     $cliente_id = intval($_POST['cliente_id'] ?? 0);
     if (!$cliente_id) {
-        wp_send_json_error('ID de cliente no proporcionado');
+        wp_send_json_error(['message' => 'ID de cliente no proporcionado']);
     }
 
     global $wpdb;
 
-    $cliente = $wpdb->get_row($wpdb->prepare(
-        "SELECT user_email FROM {$wpdb->prefix}users WHERE ID = %d", $cliente_id
-    ));
-
+    $cliente = get_userdata($cliente_id);
     if (!$cliente) {
-        wp_send_json_error('Cliente no encontrado');
+        wp_send_json_error(['message' => 'Cliente no encontrado']);
     }
 
-    $estado_credito = get_user_meta($cliente_id, 'estado_credito', true) ?: 'inactivo';
-    $credito_total = floatval(get_user_meta($cliente_id, 'credito_disponible', true) ?: 0);
-    $oc_obligatoria = get_user_meta($cliente_id, 'oc_obligatoria', true) == '1';
+    $estado_credito   = get_user_meta($cliente_id, 'estado_credito', true) ?: 'inactivo';
+    $credito_total    = floatval(get_user_meta($cliente_id, 'credito_disponible', true) ?: 0);
+    $oc_obligatoria   = get_user_meta($cliente_id, 'oc_obligatoria', true) === '1';
 
-    // ✅ Usar el campo correcto: saldo_pendiente
-    $cuentas = $wpdb->get_results($wpdb->prepare(
-        "SELECT saldo_pendiente FROM {$wpdb->prefix}cuentas_cobrar WHERE cliente_id = %d AND estado = 'pendiente'",
+    // ⚡ Obtener deuda total directamente desde SQL
+    $deuda_actual = floatval($wpdb->get_var($wpdb->prepare(
+        "SELECT SUM(saldo_pendiente) FROM {$wpdb->prefix}cuentas_cobrar 
+         WHERE cliente_id = %d AND estado = 'pendiente'",
         $cliente_id
-    ));
-
-    $deuda_actual = 0;
-    foreach ($cuentas as $c) {
-        $monto = floatval(str_replace([',', '$'], '', $c->saldo_pendiente));
-        $deuda_actual += $monto;
-    }
+    ))) ?: 0;
 
     $credito_disponible = $credito_total - $deuda_actual;
 
+    // ✅ Devolver respuesta JSON estructurada
     wp_send_json_success([
-        'id' => $cliente_id,
-        'nombre' => $cliente->user_email,
-        'correo' => $cliente->user_email,
-        'estado_credito' => $estado_credito,
-        'credito_total' => $credito_total,
-        'deuda_actual' => $deuda_actual,
-        'credito_disponible' => $credito_disponible,
-        'oc_obligatoria' => $oc_obligatoria
+        'id'                 => $cliente_id,
+        'nombre'            => $cliente->display_name ?: $cliente->user_email,
+        'correo'            => $cliente->user_email,
+        'estado_credito'    => strtolower($estado_credito),
+        'credito_total'     => round($credito_total, 2),
+        'deuda_actual'      => round($deuda_actual, 2),
+        'credito_disponible'=> round($credito_disponible, 2),
+        'oc_obligatoria'    => $oc_obligatoria
     ]);
 }
 // Endpoint AJAX: Obtener cuentas por cobrar
@@ -1417,7 +1467,6 @@ function ajax_validar_credito_cliente() {
 add_action('wp_ajax_ajax_obtener_cuentas_cobrar', function () {
     global $wpdb;
 
-    // 🛡️ Sanitizar inputs recibidos
     $cliente_term = sanitize_text_field($_POST['cliente'] ?? '');
     $estado       = sanitize_text_field($_POST['estado'] ?? '');
     $desde        = sanitize_text_field($_POST['desde'] ?? '');
@@ -1426,24 +1475,25 @@ add_action('wp_ajax_ajax_obtener_cuentas_cobrar', function () {
     $por_pagina   = 10;
     $offset       = ($pagina - 1) * $por_pagina;
 
-    $where = "1=1";
+    $where_clauses = ["1=1"];
     $params = [];
 
-    // 🔥 Aplicar filtros dinámicos
     if (!empty($estado)) {
-        $where .= " AND estado = %s";
+        $where_clauses[] = "c.estado = %s";
         $params[] = $estado;
     }
+
     if (!empty($desde)) {
-        $where .= " AND DATE(fecha_creacion) >= %s";
+        $where_clauses[] = "DATE(c.fecha_creacion) >= %s";
         $params[] = $desde;
     }
+
     if (!empty($hasta)) {
-        $where .= " AND DATE(fecha_creacion) <= %s";
+        $where_clauses[] = "DATE(c.fecha_creacion) <= %s";
         $params[] = $hasta;
     }
 
-    // 🔥 Filtro por cliente
+    $cliente_in_sql = '';
     if (!empty($cliente_term)) {
         $user_query = get_users([
             'search' => '*' . esc_attr($cliente_term) . '*',
@@ -1453,21 +1503,22 @@ add_action('wp_ajax_ajax_obtener_cuentas_cobrar', function () {
         $cliente_ids = array_map('intval', $user_query);
 
         if (empty($cliente_ids)) {
-            wp_send_json_success([
-                'cuentas' => [],
-                'total_paginas' => 0
-            ]);
+            wp_send_json_success(['cuentas' => [], 'total_paginas' => 0]);
         }
 
-        $placeholders = implode(',', array_fill(0, count($cliente_ids), '%d'));
-        $where .= " AND cliente_id IN ($placeholders)";
-        $params = array_merge($params, $cliente_ids);
+        // Construir lista segura de IDs para IN (...)
+        $ids = implode(',', array_map('intval', $cliente_ids));
+        $where_clauses[] = "c.cliente_id IN ($ids)";
     }
 
-    // 🔍 Consulta: obtener cuentas por cobrar
-    $sql_total = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}cuentas_cobrar WHERE $where", ...$params);
+    $where = implode(' AND ', $where_clauses);
+
+    // Consulta total
+    $sql_total = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}cuentas_cobrar c WHERE $where", ...$params);
     $total_resultados = (int) $wpdb->get_var($sql_total);
 
+    // Consulta paginada
+    $params_with_limits = array_merge($params, [$por_pagina, $offset]);
     $sql = $wpdb->prepare(
         "SELECT 
             c.id,
@@ -1479,43 +1530,35 @@ add_action('wp_ajax_ajax_obtener_cuentas_cobrar', function () {
             c.estado,
             c.orden_compra_url,
             (SELECT comprobante_url FROM {$wpdb->prefix}pagos_cxc 
-            WHERE cuenta_id = c.id AND comprobante_url IS NOT NULL 
-            ORDER BY fecha_pago DESC LIMIT 1) AS comprobante_pago_url
+             WHERE cuenta_id = c.id AND comprobante_url IS NOT NULL 
+             ORDER BY fecha_pago DESC LIMIT 1) AS comprobante_pago_url
         FROM {$wpdb->prefix}cuentas_cobrar c
         WHERE $where
         ORDER BY c.fecha_creacion DESC
         LIMIT %d OFFSET %d",
-        ...array_merge($params, [$por_pagina, $offset])
+        ...$params_with_limits
     );
+
     $cuentas = $wpdb->get_results($sql);
 
-    // 📦 Formatear resultados
     $formateadas = [];
     foreach ($cuentas as $cuenta) {
         $user = get_userdata($cuenta->cliente_id);
-
-        // ⚙️ Lógica para obtener un nombre válido
         $nombre_cliente = 'Cliente eliminado';
         if ($user) {
-            $nombre_cliente = $user->display_name;
-            if (empty($nombre_cliente)) {
-                $nombre_cliente = trim($user->first_name . ' ' . $user->last_name);
-                if (empty($nombre_cliente)) {
-                    $nombre_cliente = $user->user_email;
-                }
-            }
+            $nombre_cliente = $user->display_name ?: trim($user->first_name . ' ' . $user->last_name) ?: $user->user_email;
         }
 
         $formateadas[] = [
-            'id'                    => (int) $cuenta->id,
-            'cliente'               => esc_html($nombre_cliente),
-            'monto_total'           => number_format((float) $cuenta->monto_total, 2),
-            'monto_pagado'          => number_format((float) $cuenta->monto_pagado, 2),
-            'saldo_pendiente'       => number_format((float) $cuenta->saldo_pendiente, 2),
-            'fecha_limite_pago'     => date('Y-m-d', strtotime($cuenta->fecha_limite_pago)),
-            'estado'                => sanitize_text_field($cuenta->estado),
-            'orden_compra_url'      => !empty($cuenta->orden_compra_url) ? esc_url($cuenta->orden_compra_url) : null,
-            'comprobante_pago_url'  => !empty($cuenta->comprobante_pago_url) ? esc_url($cuenta->comprobante_pago_url) : null,
+            'id' => (int)$cuenta->id,
+            'cliente' => esc_html($nombre_cliente),
+            'monto_total' => number_format((float)$cuenta->monto_total, 2),
+            'monto_pagado' => number_format((float)$cuenta->monto_pagado, 2),
+            'saldo_pendiente' => number_format((float)$cuenta->saldo_pendiente, 2),
+            'fecha_limite_pago' => date('Y-m-d', strtotime($cuenta->fecha_limite_pago)),
+            'estado' => sanitize_text_field($cuenta->estado),
+            'orden_compra_url' => !empty($cuenta->orden_compra_url) ? esc_url($cuenta->orden_compra_url) : null,
+            'comprobante_pago_url' => !empty($cuenta->comprobante_pago_url) ? esc_url($cuenta->comprobante_pago_url) : null,
         ];
     }
 
@@ -2916,7 +2959,7 @@ add_filter('woocommerce_my_account_my_orders_actions', function($actions, $order
     if ($estado_armado === 'enviado') {
         $actions['recibir'] = [
             'url'  => '#',
-            'name' => '📥 Recibir',
+            'name' => 'Recibir',
             'custom_data' => [
                 'order-id' => $order->get_id(),
                 'metodo' => $metodo_pago
@@ -3110,7 +3153,7 @@ add_action('wp_footer', function () {
                     .then(res => res.json())
                     .then(resp => {
                         if (resp.success) {
-                            Swal.fire('✅ Pedido recibido', resp.data.message, 'success').then(() => {
+                            Swal.fire('Pedido recibido', resp.data.message, 'success').then(() => {
                                 location.reload();
                             });
                         } else {

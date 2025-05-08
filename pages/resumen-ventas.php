@@ -10,7 +10,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 <div class="max-w-7xl mx-auto p-6">
     <h2 class="text-2xl font-bold mb-6">Resumen Ventas POS</h2>
 
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <input type="text" id="filtroBusqueda" placeholder="Buscar por cliente o folio..." class="border px-3 py-2 rounded w-full">
         <input type="date" id="filtroDesdeVenta" class="border px-3 py-2 rounded w-full">
         <input type="date" id="filtroHastaVenta" class="border px-3 py-2 rounded w-full">
@@ -21,7 +21,11 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
             <option value="transferencia">Transferencia</option>
             <option value="credito">Crédito</option>
         </select>
+        <button id="btnBuscarVentas" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+            Buscar
+        </button>
     </div>
+
 
     <div class="overflow-x-auto bg-white shadow rounded">
         <table class="min-w-full text-sm text-left">
@@ -53,6 +57,9 @@ jQuery(document).ready(function($) {
     let paginaVenta = 1;
 
     function cargarVentas() {
+        const $btn = $('#btnBuscarVentas');
+        $btn.prop('disabled', true).text('Buscando...');
+
         const busqueda = $('#filtroBusqueda').val();
         const desde = $('#filtroDesdeVenta').val();
         const hasta = $('#filtroHastaVenta').val();
@@ -62,35 +69,41 @@ jQuery(document).ready(function($) {
             action: 'ajax_obtener_resumen_ventas',
             busqueda, desde, hasta, metodo, pagina: paginaVenta
         }, function(res) {
+            const $tabla = $('#tablaVentasAutopartes');
             if (!res.success || res.data.ventas.length === 0) {
-                $('#tablaVentasAutopartes').html('<tr><td colspan="6" class="text-center py-4">No hay ventas registradas</td></tr>');
-                return;
+                $tabla.html('<tr><td colspan="6" class="text-center py-4">No hay ventas registradas</td></tr>');
+            } else {
+                let html = '';
+                res.data.ventas.forEach(v => {
+                    html += `
+                        <tr class="border-b">
+                            <td class="px-4 py-2 font-semibold">#${v.id}</td>
+                            <td class="px-4 py-2">${v.cliente}</td>
+                            <td class="px-4 py-2">$${v.total}</td>
+                            <td class="px-4 py-2">${v.metodo}</td>
+                            <td class="px-4 py-2">${v.fecha}</td>
+                            <td class="px-4 py-2">
+                                <button data-id="${v.id}" class="bg-blue-600 text-white text-xs px-3 py-1 rounded ver-ticket">
+                                    🧾 Ver Ticket
+                                </button>
+                            </td>
+                        </tr>`;
+                });
+                $tabla.html(html);
+                $('#paginaActualVenta').text(paginaVenta);
             }
 
-            let html = '';
-            res.data.ventas.forEach(v => {
-                html += `
-                    <tr class="border-b">
-                        <td class="px-4 py-2 font-semibold">#${v.id}</td>
-                        <td class="px-4 py-2">${v.cliente}</td>
-                        <td class="px-4 py-2">$${v.total}</td>
-                        <td class="px-4 py-2">${v.metodo}</td>
-                        <td class="px-4 py-2">${v.fecha}</td>
-                        <td class="px-4 py-2">
-                            <button data-id="${v.id}" class="bg-blue-600 text-white text-xs px-3 py-1 rounded ver-ticket">
-                                🧾 Ver Ticket
-                            </button>
-                        </td>
-                    </tr>`;
-            });
-            $('#tablaVentasAutopartes').html(html);
-            $('#paginaActualVenta').text(paginaVenta);
+            // ✅ Reactivar botón
+            $btn.prop('disabled', false).text('Buscar');
+        }).fail(function() {
+            Swal.fire('Error', 'Hubo un problema al cargar las ventas.', 'error');
+            $btn.prop('disabled', false).text('Buscar');
         });
     }
 
     $(document).on('click', '.ver-ticket', function() {
         const ventaId = $(this).data('id');
-        Swal.fire('🔍', 'Aquí podrías cargar el detalle de la venta #'+ventaId, 'info');
+        Swal.fire('', 'Aquí podrías cargar el detalle de la venta #'+ventaId, 'info');
         // Puedes usar un fetch/$.post aquí para obtener y mostrar el ticket en un popup
     });
 
@@ -168,8 +181,7 @@ jQuery(document).ready(function($) {
         `;
     }
 
-
-    $('#filtroBusqueda, #filtroDesdeVenta, #filtroHastaVenta, #filtroMetodoPago').on('change input', function() {
+    $('#btnBuscarVentas').on('click', function () {
         paginaVenta = 1;
         cargarVentas();
     });

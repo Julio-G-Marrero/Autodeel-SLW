@@ -42,7 +42,12 @@ $page = $_GET['page'] ?? '';
         <div class="p-6 border-b border-gray-300 flex justify-center mt-10 lg:mt-8">
             <img src="https://dev-autodeel-slw.pantheonsite.io/wp-content/uploads/2025/04/LOGOSINFONDO-2.png" alt="Autodeel Logo" class="h-12 w-auto">
         </div>
-
+        <!-- Bienvenida -->
+        <div class="p-4 text-center border-b border-gray-300">
+            <p class="text-sm text-gray-800">
+                ¡Hola, <strong><?= esc_html($current_user->display_name); ?></strong>!
+            </p>
+        </div>
         <!-- Navegación -->
         <nav class="mt-4 px-4">
             <ul class="flex flex-col gap-1">
@@ -168,7 +173,7 @@ $page = $_GET['page'] ?? '';
 
     <!-- Cerrar sesión (siempre visible al final) -->
     <div class="p-4 shrink-0">
-        <a href="<?= wp_logout_url() ?>" class="block w-full text-center px-4 py-2 rounded bg-red-600 hover:bg-red-700 transition font-medium">
+        <a href="<?= wp_logout_url() ?>" class="block w-full text-center px-4 py-2 rounded bg-red-600 hover:bg-red-700 transition font-medium hover:text-white">
             Cerrar sesión
         </a>
     </div>
