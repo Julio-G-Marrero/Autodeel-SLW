@@ -1,11 +1,10 @@
 <?php
 wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', [], null, true);
-if (!current_user_can('manage_options')) {
-    wp_die('No tienes permisos suficientes para acceder a esta página.');
-}
+include_once plugin_dir_path(__FILE__) . '../templates/layout.php';
+include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar visual
 ?>
-<div class="wrap">
-    <h1 class="wp-heading-inline">📄 Gestión de Negociaciones</h1>
+<div class="wrap ml-4">
+    <h1 class="wp-heading-inline">Gestión de Negociaciones</h1>
     <p class="description">Revisa y responde las solicitudes de negociación de precios enviadas desde el punto de venta.</p>
 
     <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
