@@ -210,7 +210,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Negociaciones de Precios',
         'Negociaciones',
-        'manage_options',
+        'gestion_negociaciones',
         'gestion-negociaciones',
         function () {
             include plugin_dir_path(__FILE__) . '../pages/gestion-negociaciones.php';
