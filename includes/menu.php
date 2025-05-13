@@ -206,6 +206,16 @@ function catalogo_autopartes_menu() {
             include plugin_dir_path(__FILE__) . '../pages/armado-pedido.php';
         }
     );
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Negociaciones de Precios',
+        'Negociaciones',
+        'manage_options',
+        'gestion-negociaciones',
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/gestion-negociaciones.php';
+        }
+    );
 }
 
 add_action('admin_menu', 'catalogo_autopartes_menu');

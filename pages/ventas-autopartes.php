@@ -100,7 +100,10 @@ wp_enqueue_script('fontawesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-aw
             <button id="btnValidarVenta"
             class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded text-lg flex items-center justify-center gap-2"
             >
-            <i class="fas fa-check-circle"></i> Proceder Venta
+                <i class="fas fa-check-circle"></i> Proceder Venta
+            </button>
+            <button id="btnCargarNegociacion" class="mt-4 w-full bg-yellow-600 hover:bg-yellow-700 text-white py-3 rounded text-lg flex items-center justify-center gap-2">
+                <i class="fas fa-handshake"></i> Cargar negociaciones
             </button>
         </div>
     </section>
@@ -110,6 +113,73 @@ wp_enqueue_script('fontawesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-aw
 let productosSeleccionados = [];
 
 jQuery(document).ready(function($) {
+    $(document).on('click', '#btnCargarNegociacion', function () {
+        $.post(ajaxurl, {
+            action: 'ajax_obtener_mis_negociaciones_aprobadas'
+        }, function (res) {
+            if (!res.success || !res.data.length) {
+                Swal.fire('Sin resultados', 'No tienes negociaciones registradas.', 'info');
+                return;
+            }
+
+            const cards = res.data.map(n => {
+                let icono = '⏳', color = 'text-yellow-600', estado = 'Pendiente';
+                if (n.estado === 'aprobado') { icono = ''; color = 'text-green-600'; estado = 'Aprobado'; }
+                else if (n.estado === 'rechazado') { icono = ''; color = 'text-red-600'; estado = 'Rechazado'; }
+
+                return `
+                    <div class="border rounded p-3 bg-white shadow-sm flex flex-col gap-1 text-sm" data-json='${JSON.stringify(n)}'>
+                        <div class="font-semibold text-gray-800">${n.nombre_producto}</div>
+                        <div class="text-gray-500">SKU: <span class="text-xs">${n.producto_sku}</span></div>
+                        <div class="text-gray-500">Cliente: <span class="text-xs">${n.cliente_nombre}</span></div>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="${color}">${icono} ${estado}</span>
+                            <span class="ml-auto text-gray-600">$${parseFloat(n.precio_solicitado).toFixed(2)}</span>
+                        </div>
+                        ${n.estado === 'aprobado' ? `
+                            <button class="btn-cargar-negociacion bg-green-600 hover:bg-green-700 text-white text-xs py-1 px-2 rounded mt-2 self-start">
+                                Cargar esta negociación
+                            </button>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+
+            Swal.fire({
+                title: 'Tus negociaciones',
+                html: `<div class="max-h-96 overflow-y-auto flex flex-col gap-3">${cards}</div>`,
+                showCancelButton: true,
+                showConfirmButton: false,
+                cancelButtonText: 'Cerrar'
+            });
+        });
+    });
+    $(document).on('click', '.btn-cargar-negociacion', function () {
+        const container = $(this).closest('[data-json]');
+        const n = JSON.parse(container.attr('data-json'));
+
+        $('#clienteID').val(n.cliente_id);
+        $('#cliente').val(`${n.cliente_nombre} (${n.cliente_correo})`);
+        $('#clienteResultado').html(`<span class="text-green-600">Cliente cargado: ${n.cliente_nombre}</span>`);
+
+        const yaExiste = productosSeleccionados.find(p => p.sku === n.producto_sku);
+        if (yaExiste) {
+            Swal.fire('Ya en carrito', 'Este producto ya fue agregado.', 'info');
+            return;
+        }
+
+        productosSeleccionados.push({
+            sku: n.producto_sku,
+            nombre: n.nombre_producto,
+            precio: parseFloat(n.precio_solicitado),
+            cantidad: 1
+        });
+
+        actualizarTabla();
+
+        Swal.close();
+        Swal.fire('Cargado', 'Producto y cliente agregados correctamente.', 'success');
+    });
     $(document).on('input', '#inputQR', function () {
         const url = $(this).val().trim();
         const match = url.match(/sku=([^#]+)/i);
@@ -121,7 +191,7 @@ jQuery(document).ready(function($) {
 
         const sku = match[1];
 
-        $('#resultadoBusquedaProducto').html('<p class="text-blue-600">🔎 Buscando producto por QR...</p>');
+        $('#resultadoBusquedaProducto').html('<p class="text-blue-600">Buscando producto por QR...</p>');
 
         $.post(ajaxurl, {
             action: 'ajax_buscar_producto_avanzado',
@@ -171,10 +241,12 @@ jQuery(document).ready(function($) {
                     <td class="px-2 py-1 hidden">$${subtotal.toFixed(2)}</td>
                     <td class="px-2 py-1">
                         <button data-index="${index}" class="text-red-600 btn-eliminar">
-                        <svg class="w-4 h-4 text-red-600 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
-                        <path fill-rule="evenodd" d="M8.586 2.586A2 2 0 0 1 10 2h4a2 2 0 0 1 2 2v2h3a1 1 0 1 1 0 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8a1 1 0 0 1 0-2h3V4a2 2 0 0 1 .586-1.414ZM10 6h4V4h-4v2Zm1 4a1 1 0 1 0-2 0v8a1 1 0 1 0 2 0v-8Zm4 0a1 1 0 1 0-2 0v8a1 1 0 1 0 2 0v-8Z" clip-rule="evenodd"/>
-                        </svg>
-
+                            <svg class="w-4 h-4 text-red-600 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+                            <path fill-rule="evenodd" d="M8.586 2.586A2 2 0 0 1 10 2h4a2 2 0 0 1 2 2v2h3a1 1 0 1 1 0 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8a1 1 0 0 1 0-2h3V4a2 2 0 0 1 .586-1.414ZM10 6h4V4h-4v2Zm1 4a1 1 0 1 0-2 0v8a1 1 0 1 0 2 0v-8Zm4 0a1 1 0 1 0-2 0v8a1 1 0 1 0 2 0v-8Z" clip-rule="evenodd"/>
+                            </svg>
+                        </button>
+                        <button data-index="${index}" class="text-yellow-600 btn-negociar-precio" title="Solicitar negociación">
+                            <i class="fas fa-handshake"></i>
                         </button>
                     </td>
                 </tr>
@@ -1061,6 +1133,66 @@ jQuery(document).ready(function($) {
     // Manejar cambio entre tipos de búsqueda (QR, SKU, Compatibilidad)
     $(document).ready(function () {
         $('.tab-busqueda[data-tipo="qr"]').trigger('click');
+    });
+
+    $(document).on('click', '.btn-negociar-precio', function () {
+        const index = $(this).data('index');
+        const producto = productosSeleccionados[index];
+
+        Swal.fire({
+            title: '💬 Solicitar negociación',
+            html: `
+                <p>Producto: <strong>${producto.nombre}</strong></p>
+                <p>Precio actual: $${producto.precio.toFixed(2)}</p>
+                <label class="block text-left mt-2 mb-1 text-sm font-medium">Nuevo precio sugerido:</label>
+                <input type="number" id="precioNegociado" class="swal2-input" placeholder="Ej. 3200" min="1">
+                <label class="block text-left mt-2 mb-1 text-sm font-medium">Motivo de la solicitud:</label>
+                <textarea id="motivoNegociacion" class="swal2-textarea" placeholder="Descuento por volumen, daño, etc."></textarea>
+            `,
+            showCancelButton: true,
+            confirmButtonText: 'Enviar solicitud',
+            preConfirm: () => {
+                const precioInput = document.getElementById('precioNegociado').value.trim().replace(',', '.');
+                const nuevoPrecio = parseFloat(precioInput);
+                const motivo = document.getElementById('motivoNegociacion').value.trim();
+
+                if (isNaN(nuevoPrecio) || nuevoPrecio <= 0) {
+                    Swal.showValidationMessage('Ingresa un precio válido.');
+                    return false;
+                }
+
+                if (motivo.length < 5) {
+                    Swal.showValidationMessage('Ingresa un motivo válido.');
+                    return false;
+                }
+
+                return { nuevoPrecio, motivo };
+            }
+        }).then(result => {
+            if (!result.isConfirmed) return;
+
+            const clienteID = $('#clienteID').val();
+            if (!clienteID) {
+                Swal.fire('Cliente no seleccionado', 'Primero debes seleccionar un cliente.', 'warning');
+                return;
+            }
+
+            $.post(ajaxurl, {
+                action: 'ajax_solicitar_negociacion_precio',
+                sku: producto.sku,
+                nombre: producto.nombre,
+                precio_actual: producto.precio,
+                precio_solicitado: result.value.nuevoPrecio,
+                motivo: result.value.motivo,
+                cliente_id: clienteID
+            }, function (res) {
+                if (res.success) {
+                    Swal.fire('✅ Solicitud enviada', 'Tu solicitud de negociación fue enviada correctamente.', 'success');
+                } else {
+                    Swal.fire('❌ Error', res.data || 'No se pudo enviar la solicitud.', 'error');
+                }
+            });
+        });
     });
 
     $(document).on('click', '.tab-busqueda', function () {

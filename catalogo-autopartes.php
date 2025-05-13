@@ -604,7 +604,32 @@ function ajax_registrar_venta_autopartes() {
     foreach ($productos as $p) {
         $product_id = wc_get_product_id_by_sku($p['sku']);
         if ($product_id) {
-            $order->add_product(wc_get_product($product_id), intval($p['cantidad']));
+            $product = wc_get_product($product_id);
+            $item = new WC_Order_Item_Product();
+            $item->set_product($product);
+            $item->set_quantity(intval($p['cantidad']));
+            $item->set_subtotal(floatval($p['precio']));
+            $item->set_total(floatval($p['precio']));
+            $order->add_item($item);
+            $item->save(); // ✅ Esto asegura que el precio negociado se guarde correctamente
+        }
+
+        // Descontar stock y actualizar solicitudes/negociaciones
+        if ($product_id) {
+            $stock_actual = (int) get_post_meta($product_id, '_stock', true);
+            update_post_meta($product_id, '_stock', max(0, $stock_actual - intval($p['cantidad'])));
+        }
+
+        if (!empty($p['solicitud_id'])) {
+            $wpdb->update("{$wpdb->prefix}solicitudes_piezas", [
+                'estado' => 'vendido'
+            ], ['id' => intval($p['solicitud_id'])]);
+        }
+
+        if (!empty($p['negociacion_id'])) {
+            $wpdb->update("{$wpdb->prefix}negociaciones_precios", [
+                'estado' => 'vendida'
+            ], ['id' => intval($p['negociacion_id'])]);
         }
     }
 
@@ -670,6 +695,12 @@ function ajax_registrar_venta_autopartes() {
                 'estado' => 'vendido'
             ], ['id' => intval($p['solicitud_id'])]);
         }
+        if (!empty($p['negociacion_id'])) {
+            $wpdb->update("{$wpdb->prefix}negociaciones_precios", [
+                'estado' => 'vendida'
+            ], ['id' => intval($p['negociacion_id'])]);
+        }
+
     }
 
     // 🚀 Respuesta de éxito
@@ -2608,7 +2639,12 @@ function redirigir_personalizado_al_login($redirect_to, $request, $user) {
     return $redirect_to;
 }
 
-add_filter('woocommerce_login_redirect', 'redireccion_por_rol_personalizado', 10, 2);
+// Para WooCommerce, solo necesitas 2 argumentos
+add_filter('woocommerce_login_redirect', function($redirect_to, $user) {
+    return redireccion_por_rol_personalizado($redirect_to, '', $user);
+}, 10, 2);
+
+// Para login normal de WP, sí se usan los 3
 add_filter('login_redirect', 'redireccion_por_rol_personalizado', 10, 3);
 
 function redireccion_por_rol_personalizado($redirect_to, $requested_redirect_to, $user) {
@@ -2618,19 +2654,15 @@ function redireccion_por_rol_personalizado($redirect_to, $requested_redirect_to,
         if (in_array('rol_capturista', $roles)) {
             return admin_url('admin.php?page=captura-productos');
         }
-
         if (in_array('rol_solicitudes', $roles)) {
             return admin_url('admin.php?page=solicitudes-autopartes');
         }
-
         if (in_array('punto_de_venta', $roles)) {
             return admin_url('admin.php?page=ventas-autopartes');
         }
-
         if (in_array('cobranza', $roles)) {
             return admin_url('admin.php?page=cuentas-por-cobrar');
         }
-        
         if (in_array('almacenista', $roles)) {
             return admin_url('admin.php?page=gestion-pedidos');
         }
@@ -2638,6 +2670,7 @@ function redireccion_por_rol_personalizado($redirect_to, $requested_redirect_to,
 
     return $redirect_to;
 }
+
 
 //Funcionalida para credito 
 // Agregar Gateway Personalizado de Pago a Crédito
@@ -2975,6 +3008,206 @@ add_filter('woocommerce_my_account_my_orders_actions_html', function($html, $act
     return isset($action['custom_html']) ? $action['custom_html'] : $html;
 }, 10, 3);
 
+
+//Neogciaciones Refacciones 
+add_action('wp_ajax_ajax_solicitar_negociacion_precio', function () {
+    global $wpdb;
+
+    $usuario_id = get_current_user_id();
+    $cliente_id = intval($_POST['cliente_id']);
+    $sku = sanitize_text_field($_POST['sku']);
+    $nombre = sanitize_text_field($_POST['nombre']);
+    $precio_actual = floatval($_POST['precio_actual']);
+    $precio_solicitado = floatval($_POST['precio_solicitado']);
+    $motivo = sanitize_text_field($_POST['motivo']);
+
+    $tabla = $wpdb->prefix . 'negociaciones_precios';
+
+    $insertado = $wpdb->insert($tabla, [
+        'user_id' => $usuario_id,
+        'cliente_id' => $cliente_id,
+        'producto_sku' => $sku,
+        'nombre_producto' => $nombre,
+        'precio_original' => $precio_actual,
+        'precio_solicitado' => $precio_solicitado,
+        'motivo' => $motivo,
+        'estado' => 'pendiente',
+        'fecha_creacion' => current_time('mysql'),
+    ]);
+
+    if ($insertado) {
+        wp_send_json_success('Solicitud guardada');
+    } else {
+        wp_send_json_error('No se pudo registrar la solicitud.');
+    }
+});
+
+add_action('wp_ajax_ajax_obtener_negociaciones_pendientes', function () {
+    global $wpdb;
+    $tabla = $wpdb->prefix . 'negociaciones_precios';
+
+    $negociaciones = $wpdb->get_results("
+        SELECT id, producto_sku, nombre_producto, precio_original, precio_solicitado, motivo
+        FROM $tabla
+        WHERE estado = 'pendiente'
+        ORDER BY fecha_creacion DESC
+        LIMIT 50
+    ");
+
+    wp_send_json_success($negociaciones);
+});
+
+add_action('wp_ajax_ajax_responder_negociacion_precio', function () {
+    global $wpdb;
+
+    $id = intval($_POST['id']);
+    $accion = sanitize_text_field($_POST['accion']);
+    $comentario = sanitize_text_field($_POST['comentario']);
+
+    if (!in_array($accion, ['aprobar', 'rechazar'])) {
+        wp_send_json_error('Acción inválida.');
+    }
+
+    $estado = $accion === 'aprobar' ? 'aprobado' : 'rechazado';
+
+    $tabla = $wpdb->prefix . 'negociaciones_precios';
+
+    // Verificar que exista la negociación
+    $existe = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $tabla WHERE id = %d", $id));
+    if (!$existe) {
+        wp_send_json_error('La negociación no existe.');
+    }
+
+    $res = $wpdb->update(
+        $tabla,
+        [
+            'estado' => $estado,
+            'comentario_aprobacion' => $comentario,
+            'fecha_aprobacion' => current_time('mysql'),
+            'aprobado_por' => get_current_user_id()
+        ],
+        ['id' => $id],
+        ['%s', '%s', '%s', '%d'],
+        ['%d']
+    );
+
+    if ($res !== false) {
+        wp_send_json_success("Negociación marcada como '$estado'.");
+    } else {
+        wp_send_json_error('No se realizaron cambios en la negociación.');
+    }
+});
+
+add_action('wp_ajax_ajax_obtener_mis_negociaciones_aprobadas', function () {
+    global $wpdb;
+    $user_id = get_current_user_id();
+    $tabla = $wpdb->prefix . 'negociaciones_precios';
+
+    $query = $wpdb->prepare("
+        SELECT 
+            n.id, 
+            n.producto_sku, 
+            n.nombre_producto, 
+            n.precio_original, 
+            n.precio_solicitado, 
+            n.estado, 
+            n.cliente_id,
+            meta.meta_value AS cliente_nombre,
+            u.user_email AS cliente_correo
+        FROM $tabla n
+        LEFT JOIN {$wpdb->prefix}users u ON u.ID = n.cliente_id
+        LEFT JOIN {$wpdb->prefix}usermeta meta ON meta.user_id = u.ID AND meta.meta_key = 'nombre_completo'
+        WHERE n.user_id = %d
+        ORDER BY n.fecha_creacion DESC
+        LIMIT 100
+    ", $user_id);
+
+    $negociaciones = $wpdb->get_results($query, ARRAY_A);
+
+    wp_send_json_success($negociaciones);
+});
+
+add_action('wp_ajax_ajax_admin_listar_negociaciones', function () {
+    global $wpdb;
+
+    $estado = isset($_GET['estado']) ? sanitize_text_field($_GET['estado']) : '';
+    $cliente = isset($_GET['cliente']) ? sanitize_text_field($_GET['cliente']) : '';
+
+    $tabla_negociaciones = $wpdb->prefix . 'negociaciones_precios';
+    $tabla_usuarios = $wpdb->prefix . 'users';
+    $tabla_autopartes = $wpdb->prefix . 'autopartes';
+
+    // WHERE base
+    $where = "1=1";
+    $params = [];
+
+    if (in_array($estado, ['pendiente', 'aprobado', 'rechazado'])) {
+        $where .= " AND n.estado = %s";
+        $params[] = $estado;
+    }
+
+    if (!empty($cliente)) {
+        $where .= " AND (LOWER(u.display_name) LIKE %s OR LOWER(u.user_email) LIKE %s)";
+        $params[] = '%' . strtolower($cliente) . '%';
+        $params[] = '%' . strtolower($cliente) . '%';
+    }
+
+    // Consulta principal
+    $query = "
+        SELECT 
+            n.*, 
+            u.display_name AS cliente_nombre,
+            u.user_email AS cliente_correo,
+            a.imagen_lista AS imagen_producto
+        FROM $tabla_negociaciones n
+        LEFT JOIN $tabla_usuarios u ON u.ID = n.cliente_id
+        LEFT JOIN $tabla_autopartes a ON REPLACE(n.producto_sku, SUBSTRING_INDEX(n.producto_sku, '#', -1), '') = a.codigo
+        WHERE $where
+        ORDER BY n.fecha_creacion DESC
+        LIMIT 100
+    ";
+
+    // Preparar y ejecutar con parámetros
+    $prepared = $wpdb->prepare($query, $params);
+    $resultados = $wpdb->get_results($prepared, ARRAY_A);
+
+    // Si hay imágenes adicionales desde galería, agrégalas
+    foreach ($resultados as &$negociacion) {
+        $sku = $negociacion['producto_sku'];
+        $post_id = wc_get_product_id_by_sku($sku);
+        $galeria = [];
+
+        if ($post_id) {
+            $galeria = [];
+
+            if ($post_id) {
+                $galeria_ids = get_post_meta($post_id, '_product_image_gallery', true);
+                if (!empty($galeria_ids)) {
+                    $ids = explode(',', $galeria_ids);
+                    foreach ($ids as $id) {
+                        $url = wp_get_attachment_url($id);
+                        if ($url) $galeria[] = $url;
+                    }
+                }
+
+                $imagen_destacada = get_the_post_thumbnail_url($post_id, 'full');
+                if ($imagen_destacada) {
+                    array_unshift($galeria, $imagen_destacada);
+                }
+            }
+
+            $negociacion['imagenes'] = $galeria;
+            $imagen_destacada = get_the_post_thumbnail_url($post_id, 'full');
+            if ($imagen_destacada) {
+                array_unshift($galeria, $imagen_destacada);
+            }
+        }
+
+        $negociacion['imagenes'] = $galeria;
+    }
+
+    wp_send_json_success($resultados);
+});
 
 add_action('wp_ajax_ajax_recibir_pedido_credito_cliente', 'ajax_recibir_pedido_credito_cliente');
 
