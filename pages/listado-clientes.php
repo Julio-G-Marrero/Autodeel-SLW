@@ -13,12 +13,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 
     <!-- Filtros -->
     <div class="mb-4 flex flex-col md:flex-row gap-4">
-        <select id="filtroTipo" class="border rounded px-3 py-2 w-full md:w-1/3">
-            <option value="">Todos los Tipos</option>
-            <option value="externo">Externo</option>
-            <option value="interno">Interno</option>
-            <option value="distribuidor">Distribuidor</option>
-        </select>
+        <input type="text" id="filtroBusqueda" class="border rounded px-3 py-2 w-full md:w-1/2" placeholder="Buscar por nombre o correo...">
         <select id="filtroEstado" class="border rounded px-3 py-2 w-full md:w-1/3">
             <option value="">Todos los Estados de Crédito</option>
             <option value="activo">Activo</option>
@@ -28,7 +23,6 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
             Buscar
         </button>
     </div>
-
     <!-- Tabla -->
     <div class="overflow-x-auto">
         <table class="w-full table-auto border border-gray-200 rounded">
@@ -36,7 +30,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
                 <tr>
                     <th class="px-2 py-2">Nombre</th>
                     <th class="px-2 py-2">Correo</th>
-                    <th class="px-2 py-2">Tipo</th>
+                    <th class="px-2 py-2">Rol</th>
                     <th class="px-2 py-2">Crédito</th>
                     <th class="px-2 py-2">Estado</th>
                     <th class="px-2 py-2">Canal</th>
@@ -51,15 +45,15 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 <script>
 jQuery(document).ready(function($) {
     function cargarClientes() {
-        const tipo = $('#filtroTipo').val();
+        const busqueda = $('#filtroBusqueda').val().toLowerCase().trim();
         const estado = $('#filtroEstado').val();
 
-        $('#tablaClientes').html('<tr><td colspan="7" class="text-center py-4 text-gray-500">Cargando...</td></tr>');
 
+        $('#tablaClientes').html('<tr><td colspan="7" class="text-center py-4 text-gray-500">Cargando...</td></tr>');
         $.post(ajaxurl, {
             action: 'ajax_listar_clientes',
-            tipo,
-            estado
+            estado,
+            busqueda
         }, function(res) {
             if (!res.success || res.data.length === 0) {
                 $('#tablaClientes').html('<tr><td colspan="7" class="text-center py-4 text-red-500">No se encontraron clientes</td></tr>');
@@ -70,7 +64,7 @@ jQuery(document).ready(function($) {
                 <tr class="border-t text-sm text-gray-700">
                     <td class="px-2 py-2">${cliente.nombre}</td>
                     <td class="px-2 py-2">${cliente.correo}</td>
-                    <td class="px-2 py-2">${cliente.tipo_cliente}</td>
+                    <td class="px-2 py-2">${cliente.rol}</td>
                     <td class="px-2 py-2">$${cliente.credito_disponible}</td>
                     <td class="px-2 py-2">${cliente.estado_credito}</td>
                     <td class="px-2 py-2">${cliente.canal_venta}</td>
@@ -81,7 +75,7 @@ jQuery(document).ready(function($) {
             `).join('');
             $('#tablaClientes').html(rows);
             // Evento para abrir el modal de edición
-            $('#tablaClientes').on('click', '.editar-cliente', function () {
+            $('#tablaClientes').off('click', '.editar-cliente').on('click', '.editar-cliente', function () {
                 const id = $(this).data('id');
 
                 $.post(ajaxurl, {
@@ -131,12 +125,14 @@ jQuery(document).ready(function($) {
                                 <input id="edit_dias" type="number" min="0" class="swal2-input" style="width: 100%;" value="${c.dias_credito}">
                             </div>
                             </div>
-
                             <div>
-                            <label>Canal de Venta</label><br>
-                            <input id="edit_canal" class="swal2-input" style="width: 100%;" value="${c.canal_venta}">
+                                <label>Rol / Perfil de Descuento</label><br>
+                                <select id="edit_rol" class="swal2-input" style="width: 100%;">
+                                    <option value="customer" ${c.rol_slug === 'customer' ? 'selected' : ''}>Customer</option>
+                                    <option value="wholesale_customer" ${c.rol_slug === 'wholesale_customer' ? 'selected' : ''}>Wholesale Customer</option>
+                                    <option value="wholesale_talleres_crash" ${c.rol_slug === 'wholesale_talleres_crash' ? 'selected' : ''}>Talleres Crash</option>
+                                </select>
                             </div>
-
                             <div>
                             <label>¿Orden de Compra Obligatoria?</label><br>
                             <select id="edit_oc" class="swal2-input" style="width: 100%;">
@@ -158,7 +154,8 @@ jQuery(document).ready(function($) {
                                 credito: $('#edit_credito').val(),
                                 dias: $('#edit_dias').val(),
                                 canal: $('#edit_canal').val(),
-                                oc: $('#edit_oc').val()
+                                oc: $('#edit_oc').val(),
+                                rol: $('#edit_rol').val()
                             };
                         }
                     }).then(result => {
@@ -183,7 +180,7 @@ jQuery(document).ready(function($) {
 
     $('#btnBuscarClientes').on('click', cargarClientes);
     cargarClientes();
-});
+    });
 </script>
 <style>
     input#edit_nombre {

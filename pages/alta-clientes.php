@@ -5,6 +5,22 @@ include_once plugin_dir_path(__FILE__) . '/../templates/sidebar.php'; // sidebar
 wp_enqueue_style('tailwindcdn', 'https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css');
 wp_enqueue_script('jquery');
 wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', [], null, true);
+// ✅ Obtener perfiles de Wholesale (excluyendo administrador)
+global $wp_roles;
+
+$perfiles_wholesale = [];
+
+foreach ($wp_roles->roles as $slug => $details) {
+    if (
+        $slug !== 'administrator' &&                                // 🔴 Excluir administrador
+        !empty($details['capabilities']['have_wholesale_price'])    // ✅ Solo los que tengan precio de mayoreo
+    ) {
+        $perfiles_wholesale[$slug] = $details['name'];
+    }
+}
+
+// Ordenar por nombre mostrado (opcional)
+asort($perfiles_wholesale);
 ?>
 
 <div class="max-w-4xl mx-auto p-6 bg-white rounded shadow mt-6">
@@ -66,13 +82,24 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
         </div>
 
         <div class="md:col-span-2">
-            <label class="block text-sm font-medium mb-1">Canal de Venta Predeterminado</label>
-            <select name="canal" class="w-full border rounded px-3 py-2">
-                <option value="Diverso">Diverso</option>
-                <option value="Facebook Marketplace">Facebook Marketplace</option>
-                <option value="Mercado Libre">Mercado Libre</option>
-                <option value="Punto de Venta">Punto de Venta</option>
-            </select>
+            <div>
+                <label class="block text-sm font-medium mb-1">Canal de Venta Predeterminado</label>
+                <select name="canal" class="w-full border rounded px-3 py-2">
+                    <option value="Diverso">Diverso</option>
+                    <option value="Facebook Marketplace">Facebook Marketplace</option>
+                    <option value="Mercado Libre">Mercado Libre</option>
+                    <option value="Punto de Venta">Punto de Venta</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Perfil de Descuento</label>
+                    <select name="wholesale_role" class="w-full border rounded px-3 py-2">
+                        <option value="">Sin perfil</option>
+                        <?php foreach ($perfiles_wholesale as $slug => $label): ?>
+                            <option value="<?php echo esc_attr($slug); ?>"><?php echo esc_html($label); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+            </div>
         </div>
 
         <div class="md:col-span-2">

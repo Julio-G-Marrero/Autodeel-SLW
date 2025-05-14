@@ -191,10 +191,12 @@ $sql_negociaciones = "CREATE TABLE {$wpdb->prefix}negociaciones_precios (
     fecha_aprobacion DATETIME DEFAULT NULL,
     aprobado_por BIGINT DEFAULT NULL,
     comentario_aprobacion TEXT DEFAULT NULL,
+    vendido TINYINT(1) DEFAULT 0,
     PRIMARY KEY (id),
     INDEX idx_cliente_id (cliente_id),
     INDEX idx_user_id (user_id),
-    INDEX idx_estado (estado)
+    INDEX idx_estado (estado),
+    INDEX idx_vendido (vendido)
 ) $charset_collate;";
 
 

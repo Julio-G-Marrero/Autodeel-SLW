@@ -697,10 +697,9 @@ function ajax_registrar_venta_autopartes() {
         }
         if (!empty($p['negociacion_id'])) {
             $wpdb->update("{$wpdb->prefix}negociaciones_precios", [
-                'estado' => 'vendida'
+                'vendido' => 1
             ], ['id' => intval($p['negociacion_id'])]);
         }
-
     }
 
     // 🚀 Respuesta de éxito
@@ -2057,10 +2056,16 @@ function ajax_registrar_cliente() {
         wp_send_json_error(['message' => 'Error al crear el usuario']);
     }
 
-
-    // Asignar rol de cliente
+    //Asingar Rol
     $user = new WP_User($user_id);
-    $user->set_role('customer');
+    $rol_wholesale = sanitize_text_field($_POST['wholesale_role'] ?? '');
+    if (!empty($rol_wholesale)) {
+        $user->set_role($rol_wholesale);
+        update_user_meta($user_id, 'wholesale_role', $rol_wholesale);
+    } else {
+        $user->set_role('customer');
+    }
+
 
     //Enviar correo para restablecer contraseña
     // wp_new_user_notification($user_id, null, 'user');
@@ -2086,14 +2091,15 @@ function ajax_registrar_cliente() {
     update_user_meta($user_id, 'fact_estado', sanitize_text_field($_POST['fact_estado'] ?? ''));
     update_user_meta($user_id, 'fact_cp', sanitize_text_field($_POST['fact_cp'] ?? ''));
     update_user_meta($user_id, 'fact_pais', sanitize_text_field($_POST['fact_pais'] ?? ''));
-
+    if (!empty($_POST['wholesale_role'])) {
+        update_user_meta($user_id, 'wholesale_role', sanitize_text_field($_POST['wholesale_role']));
+    }
 
     // También puedes enviarle un correo con su acceso si lo deseas
 
     wp_send_json_success(['message' => 'Cliente creado con éxito']);
 }
 
-add_action('wp_ajax_ajax_buscar_cliente', 'ajax_buscar_cliente');
 
 add_action('wp_ajax_ajax_buscar_producto_avanzado', 'ajax_buscar_producto_avanzado');
 function ajax_buscar_producto_avanzado() {
@@ -2195,8 +2201,10 @@ function ajax_verificar_caja_abierta() {
     }
 }
 
+
+add_action('wp_ajax_ajax_buscar_cliente', 'ajax_buscar_cliente');
+
 function ajax_buscar_cliente() {
-    // Verifica permisos si es necesario (puedes quitar esto si no estás autenticando)
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'No autorizado']);
     }
@@ -2207,25 +2215,51 @@ function ajax_buscar_cliente() {
         wp_send_json_error(['message' => 'Ingresa al menos 2 caracteres']);
     }
 
-    $args = [
-        'role' => 'customer',
-        'number' => 20,
-        'search' => "*{$termino}*",
-        'search_columns' => ['user_login', 'user_email', 'display_name']
-    ];
+    // Obtener roles válidos
+    $wholesale_roles = get_option('wholesale_roles', []);
+    global $wp_roles;
+    $perfiles_wholesale = [];
 
-    $clientes = get_users($args);
+    foreach ($wp_roles->roles as $slug => $details) {
+        if (!empty($details['capabilities']['have_wholesale_price'])) {
+            $perfiles_wholesale[] = $slug;
+        }
+    }
+
+    $roles_permitidos = array_merge(['customer'], $perfiles_wholesale);
+
+    // Obtener todos los usuarios con esos roles
+    $usuarios = get_users([
+        'number' => -1,
+        'role__in' => $roles_permitidos,
+    ]);
+
     $resultados = [];
 
-    foreach ($clientes as $cliente) {
+    foreach ($usuarios as $cliente) {
+        $nombre = get_user_meta($cliente->ID, 'nombre_completo', true) ?: $cliente->display_name;
+        $correo = $cliente->user_email;
+        $login = $cliente->user_login;
+
+        $termino_lower = strtolower($termino);
+
+        // Coincidencia parcial en nombre, correo o login
+        if (
+            stripos($nombre, $termino_lower) === false &&
+            stripos($correo, $termino_lower) === false &&
+            stripos($login, $termino_lower) === false
+        ) {
+            continue;
+        }
+
         $resultados[] = [
             'id' => $cliente->ID,
-            'nombre' => get_user_meta($cliente->ID, 'nombre_completo', true) ?: $cliente->display_name,
-            'correo' => $cliente->user_email,
+            'nombre' => $nombre,
+            'correo' => $correo,
             'tipo_cliente' => get_user_meta($cliente->ID, 'tipo_cliente', true),
             'credito_disponible' => get_user_meta($cliente->ID, 'credito_disponible', true),
             'estado_credito' => get_user_meta($cliente->ID, 'estado_credito', true),
-            'canal_venta' => get_user_meta($cliente->ID, 'canal_venta', true)
+            'canal_venta' => get_user_meta($cliente->ID, 'canal_venta', true),
         ];
     }
 
@@ -2236,34 +2270,55 @@ add_action('wp_ajax_buscar_autopartes_compatibles', 'buscar_autopartes_compatibl
 add_action('wp_ajax_nopriv_buscar_autopartes_compatibles', 'buscar_autopartes_compatibles');
 
 add_action('wp_ajax_ajax_listar_clientes', 'ajax_listar_clientes');
-
 function ajax_listar_clientes() {
-    $tipo = sanitize_text_field($_POST['tipo'] ?? '');
     $estado = sanitize_text_field($_POST['estado'] ?? '');
+    $busqueda = sanitize_text_field($_POST['busqueda'] ?? '');
 
-    $args = [
-        'role' => 'customer',
+    global $wp_roles;
+    $wholesale_roles = [];
+
+    foreach ($wp_roles->roles as $slug => $data) {
+        if ($slug === 'administrator') continue;
+        if (!empty($data['capabilities']['have_wholesale_price']) || $slug === 'customer') {
+            $wholesale_roles[] = $slug;
+        }
+    }
+
+    $users = get_users([
+        'role__in' => $wholesale_roles,
         'number' => 200,
-    ];
+    ]);
 
-    $users = get_users($args);
     $resultados = [];
 
     foreach ($users as $user) {
+        if (in_array('administrator', $user->roles)) continue;
+
+        $nombre = get_user_meta($user->ID, 'nombre_completo', true) ?: $user->display_name;
+        $correo = $user->user_email;
         $tipo_cliente = get_user_meta($user->ID, 'tipo_cliente', true);
         $estado_credito = get_user_meta($user->ID, 'estado_credito', true);
 
-        if ($tipo && $tipo_cliente !== $tipo) continue;
+        // Filtrar por búsqueda
+        if (!empty($busqueda) && !str_contains(strtolower($nombre), $busqueda) && !str_contains(strtolower($correo), $busqueda)) {
+            continue;
+        }
+
+        // Filtrar por estado
         if ($estado && $estado_credito !== $estado) continue;
+
+        $rol_slug = $user->roles[0] ?? '';
+        $rol_nombre = ucfirst(str_replace(['wholesale_', '_'], ['', ' '], $rol_slug));
 
         $resultados[] = [
             'id' => $user->ID,
-            'nombre' => get_user_meta($user->ID, 'nombre_completo', true) ?: $user->display_name,
-            'correo' => $user->user_email,
+            'nombre' => $nombre,
+            'correo' => $correo,
             'tipo_cliente' => $tipo_cliente,
             'estado_credito' => $estado_credito,
             'credito_disponible' => get_user_meta($user->ID, 'credito_disponible', true) ?: 0,
-            'canal_venta' => get_user_meta($user->ID, 'canal_venta', true) ?: ''
+            'canal_venta' => get_user_meta($user->ID, 'canal_venta', true) ?: '',
+            'rol' => $rol_nombre,
         ];
     }
 
@@ -2274,6 +2329,9 @@ add_action('wp_ajax_ajax_obtener_cliente', function () {
     $id = intval($_POST['user_id'] ?? 0);
     if (!$id) wp_send_json_error();
 
+    $user = get_userdata($id);
+    if (!$user) wp_send_json_error();
+
     $data = [
         'id' => $id,
         'nombre' => get_user_meta($id, 'nombre_completo', true),
@@ -2282,7 +2340,8 @@ add_action('wp_ajax_ajax_obtener_cliente', function () {
         'credito_disponible' => get_user_meta($id, 'credito_disponible', true),
         'dias_credito' => get_user_meta($id, 'dias_credito', true),
         'canal_venta' => get_user_meta($id, 'canal_venta', true),
-        'oc_obligatoria' => get_user_meta($id, 'oc_obligatoria', true)
+        'oc_obligatoria' => get_user_meta($id, 'oc_obligatoria', true),
+        'rol_slug' => $user->roles[0] ?? 'customer', // 👈 agregado para mostrar rol actual
     ];
 
     wp_send_json_success($data);
@@ -2292,6 +2351,7 @@ add_action('wp_ajax_ajax_actualizar_cliente', function () {
     $id = intval($_POST['user_id'] ?? 0);
     if (!$id) wp_send_json_error();
 
+    // Actualizar campos personalizados
     update_user_meta($id, 'nombre_completo', sanitize_text_field($_POST['nombre'] ?? ''));
     update_user_meta($id, 'tipo_cliente', sanitize_text_field($_POST['tipo'] ?? 'externo'));
     update_user_meta($id, 'estado_credito', sanitize_text_field($_POST['estado_credito'] ?? 'activo'));
@@ -2299,6 +2359,12 @@ add_action('wp_ajax_ajax_actualizar_cliente', function () {
     update_user_meta($id, 'dias_credito', intval($_POST['dias'] ?? 0));
     update_user_meta($id, 'canal_venta', sanitize_text_field($_POST['canal'] ?? ''));
     update_user_meta($id, 'oc_obligatoria', intval($_POST['oc'] ?? 0));
+
+    // Cambiar rol si se proporcionó uno válido y no es 'administrator'
+    if (!empty($_POST['rol']) && $_POST['rol'] !== 'administrator') {
+        $user = new WP_User($id);
+        $user->set_role(sanitize_text_field($_POST['rol']));
+    }
 
     wp_send_json_success();
 });
@@ -3119,6 +3185,8 @@ add_action('wp_ajax_ajax_obtener_mis_negociaciones_aprobadas', function () {
         LEFT JOIN {$wpdb->prefix}users u ON u.ID = n.cliente_id
         LEFT JOIN {$wpdb->prefix}usermeta meta ON meta.user_id = u.ID AND meta.meta_key = 'nombre_completo'
         WHERE n.user_id = %d
+        AND n.estado = 'aprobado'
+        AND n.vendido = 0
         ORDER BY n.fecha_creacion DESC
         LIMIT 100
     ", $user_id);
@@ -3127,6 +3195,7 @@ add_action('wp_ajax_ajax_obtener_mis_negociaciones_aprobadas', function () {
 
     wp_send_json_success($negociaciones);
 });
+
 
 add_action('wp_ajax_ajax_admin_listar_negociaciones', function () {
     global $wpdb;

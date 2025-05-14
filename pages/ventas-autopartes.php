@@ -118,35 +118,29 @@ jQuery(document).ready(function($) {
             action: 'ajax_obtener_mis_negociaciones_aprobadas'
         }, function (res) {
             if (!res.success || !res.data.length) {
-                Swal.fire('Sin resultados', 'No tienes negociaciones registradas.', 'info');
+                Swal.fire('Sin resultados', 'No tienes negociaciones disponibles.', 'info');
                 return;
             }
 
             const cards = res.data.map(n => {
-                let icono = '⏳', color = 'text-yellow-600', estado = 'Pendiente';
-                if (n.estado === 'aprobado') { icono = ''; color = 'text-green-600'; estado = 'Aprobado'; }
-                else if (n.estado === 'rechazado') { icono = ''; color = 'text-red-600'; estado = 'Rechazado'; }
-
                 return `
                     <div class="border rounded p-3 bg-white shadow-sm flex flex-col gap-1 text-sm" data-json='${JSON.stringify(n)}'>
                         <div class="font-semibold text-gray-800">${n.nombre_producto}</div>
                         <div class="text-gray-500">SKU: <span class="text-xs">${n.producto_sku}</span></div>
                         <div class="text-gray-500">Cliente: <span class="text-xs">${n.cliente_nombre}</span></div>
                         <div class="flex items-center gap-2 mt-1">
-                            <span class="${color}">${icono} ${estado}</span>
+                            <span class="text-green-600">✅ Aprobado</span>
                             <span class="ml-auto text-gray-600">$${parseFloat(n.precio_solicitado).toFixed(2)}</span>
                         </div>
-                        ${n.estado === 'aprobado' ? `
-                            <button class="btn-cargar-negociacion bg-green-600 hover:bg-green-700 text-white text-xs py-1 px-2 rounded mt-2 self-start">
-                                Cargar esta negociación
-                            </button>
-                        ` : ''}
+                        <button class="btn-cargar-negociacion bg-green-600 hover:bg-green-700 text-white text-xs py-1 px-2 rounded mt-2 self-start">
+                            Cargar esta negociación
+                        </button>
                     </div>
                 `;
             }).join('');
 
             Swal.fire({
-                title: 'Tus negociaciones',
+                title: 'Negociaciones aprobadas',
                 html: `<div class="max-h-96 overflow-y-auto flex flex-col gap-3">${cards}</div>`,
                 showCancelButton: true,
                 showConfirmButton: false,
@@ -154,6 +148,7 @@ jQuery(document).ready(function($) {
             });
         });
     });
+
     $(document).on('click', '.btn-cargar-negociacion', function () {
         const container = $(this).closest('[data-json]');
         const n = JSON.parse(container.attr('data-json'));
@@ -172,7 +167,8 @@ jQuery(document).ready(function($) {
             sku: n.producto_sku,
             nombre: n.nombre_producto,
             precio: parseFloat(n.precio_solicitado),
-            cantidad: 1
+            cantidad: 1,
+            negociacion_id: n.id
         });
 
         actualizarTabla();
