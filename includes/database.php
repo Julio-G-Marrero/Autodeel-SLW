@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) {
 }
 
 global $wpdb;
-global $sql_catalogos, $sql_autopartes,$sql_ventas, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_cxc,$sql_pagos, $sql_cajas, $sql_movimientos_caja, $sql_apertura_caja,$sql_negociaciones;
+global $sql_catalogos, $sql_autopartes,$sql_ventas, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_cxc,$sql_pagos, $sql_cajas, $sql_movimientos_caja, $sql_apertura_caja,$sql_negociaciones,$sql_devoluciones;
 $charset_collate = $wpdb->get_charset_collate();
 
 // Tabla de Precios por Catálogo (RADEC, etc.)
@@ -199,13 +199,31 @@ $sql_negociaciones = "CREATE TABLE {$wpdb->prefix}negociaciones_precios (
     INDEX idx_vendido (vendido)
 ) $charset_collate;";
 
+$sql_devoluciones = "CREATE TABLE {$wpdb->prefix}devoluciones_autopartes (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    venta_id BIGINT NULL,
+    producto_id BIGINT NOT NULL,
+    cliente_id BIGINT NOT NULL,
+    motivo_cliente TEXT NOT NULL,
+    evidencia_urls LONGTEXT DEFAULT NULL,
+    estado_revision ENUM('pendiente', 'en_revision', 'resuelto', 'rechazado') DEFAULT 'pendiente',
+    resolucion_final ENUM('reintegrado', 'reparacion', 'baja_definitiva') DEFAULT NULL,
+    notas_revision TEXT DEFAULT NULL,
+    usuario_revision_id BIGINT DEFAULT NULL,
+    fecha_solicitud DATETIME DEFAULT CURRENT_TIMESTAMP,
+    fecha_revision DATETIME DEFAULT NULL,
+    PRIMARY KEY (id),
+    INDEX idx_venta (venta_id),
+    INDEX idx_cliente (cliente_id),
+    INDEX idx_estado (estado_revision)
+) $charset_collate;";
 
 // Función para crear todas las tablas
 function catalogo_autopartes_crear_tablas() {
     global $wpdb;
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
-    global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_ventas, $sql_cxc, $sql_pagos, $sql_cajas,$sql_movimientos_caja, $sql_apertura_caja, $sql_negociaciones;
+    global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_ventas, $sql_cxc, $sql_pagos, $sql_cajas,$sql_movimientos_caja, $sql_apertura_caja, $sql_negociaciones,$sql_devoluciones;
 
     dbDelta($sql_catalogos);
     dbDelta($sql_autopartes);
@@ -220,6 +238,7 @@ function catalogo_autopartes_crear_tablas() {
     dbDelta($sql_movimientos_caja);
     dbDelta($sql_apertura_caja);
     dbDelta($sql_negociaciones);
+    dbDelta($sql_devoluciones);
 }
 
 // Función para eliminar las tablas cuando se desinstala el plugin
@@ -236,6 +255,7 @@ function catalogo_autopartes_eliminar_tablas() {
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "cajas");
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "aperturas_caja");
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "negociaciones_precios");
+    $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "devoluciones_autopartes");
 }
 
 // Función para buscar coincidencias en los catálogos

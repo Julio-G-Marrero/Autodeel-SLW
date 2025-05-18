@@ -127,112 +127,113 @@ jQuery(document).ready(function($) {
         });
     }
 
-    $(document).on('click', '.registrar-pago', function() {
+    $(document).on('click', '.registrar-pago', function () {
         const cuentaId = $(this).data('id');
         const cliente = $(this).data('cliente');
-        const pendiente = parseFloat(
-            $(this).data('pendiente').toString().replace(/,/g, '')
-        );
+        const pendiente = parseFloat($(this).data('pendiente').toString().replace(/,/g, ''));
 
-        Swal.fire({
-            title: 'Registrar Pago',
-            html: `
-                <div class="text-left space-y-4 text-sm">
-                    <div>
-                    <p class="mb-1"><strong>Cliente:</strong> <span class="text-gray-800">${cliente}</span></p>
-                    </div>
+        // Verificar si hay una caja abierta antes de permitir registrar
+        $.post(ajaxurl, { action: 'ajax_verificar_caja_abierta' }, function (verificacion) {
+            if (!verificacion.success) {
+                Swal.fire('Caja Cerrada', 'Debes abrir una caja para poder registrar pagos.', 'warning');
+                return;
+            }
 
-                    <div>
-                    <label for="montoPago" class="block font-medium mb-1">Monto a pagar</label>
-                    <input type="number" id="montoPago" class="swal2-input w-full" placeholder="Ej. 1000" min="0" max="${pendiente}" step="0.01" />
+            // Mostrar el formulario de pago
+            Swal.fire({
+                title: 'Registrar Pago',
+                html: `
+                    <div class="text-left space-y-4 text-sm">
+                        <div>
+                            <p class="mb-1"><strong>Cliente:</strong> <span class="text-gray-800">${cliente}</span></p>
+                        </div>
+                        <div>
+                            <label for="montoPago" class="block font-medium mb-1">Monto a pagar</label>
+                            <input type="number" id="montoPago" class="swal2-input w-full" placeholder="Ej. 1000" min="0" max="${pendiente}" step="0.01" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="pagarTodo" class="h-4 w-4" />
+                            <label for="pagarTodo" class="text-sm text-gray-700">Pagar el total: <strong>$${pendiente.toFixed(2)}</strong></label>
+                        </div>
+                        <div>
+                            <label for="metodoPago" class="block font-medium mb-1">Método de pago</label>
+                            <select id="metodoPago" class="swal2-select w-full">
+                                <option value="efectivo">Efectivo</option>
+                                <option value="transferencia">Transferencia</option>
+                                <option value="tarjeta">Tarjeta</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="comprobantePago" class="block font-medium mb-1">📎 Comprobante (opcional)</label>
+                            <input type="file" id="comprobantePago" accept=".pdf,image/*" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
+                        </div>
+                        <div>
+                            <label for="notasPago" class="block font-medium mb-1">Notas adicionales</label>
+                            <textarea id="notasPago" rows="3" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder="Ej. Referencia de pago, observaciones..."></textarea>
+                        </div>
                     </div>
-
-                    <div class="flex items-center space-x-2">
-                    <input type="checkbox" id="pagarTodo" class="h-4 w-4" />
-                    <label for="pagarTodo" class="text-sm text-gray-700">Pagar el total: <strong>$${pendiente.toFixed(2)}</strong></label>
-                    </div>
-
-                    <div>
-                    <label for="metodoPago" class="block font-medium mb-1">Método de pago</label>
-                    <select id="metodoPago" class="swal2-select w-full">
-                        <option value="efectivo">Efectivo</option>
-                        <option value="transferencia">Transferencia</option>
-                        <option value="tarjeta">Tarjeta</option>
-                    </select>
-                    </div>
-
-                    <div>
-                    <label for="comprobantePago" class="block font-medium mb-1">📎 Comprobante (opcional)</label>
-                    <input type="file" id="comprobantePago" accept=".pdf,image/*" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
-                    </div>
-
-                    <div>
-                    <label for="notasPago" class="block font-medium mb-1">Notas adicionales</label>
-                    <textarea id="notasPago" rows="3" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder="Ej. Referencia de pago, observaciones..."></textarea>
-                    </div>
-                </div>
                 `,
-            showCancelButton: true,
-            confirmButtonText: 'Guardar',
-            didOpen: () => {
-                $('#pagarTodo').on('change', function () {
-                    if (this.checked) {
-                        $('#montoPago').val(pendiente.toFixed(2)).prop('disabled', true);
-                    } else {
-                        $('#montoPago').val('').prop('disabled', false);
+                showCancelButton: true,
+                confirmButtonText: 'Guardar',
+                didOpen: () => {
+                    $('#pagarTodo').on('change', function () {
+                        if (this.checked) {
+                            $('#montoPago').val(pendiente.toFixed(2)).prop('disabled', true);
+                        } else {
+                            $('#montoPago').val('').prop('disabled', false);
+                        }
+                    });
+                },
+                preConfirm: () => {
+                    const monto = parseFloat(document.getElementById('montoPago').value);
+                    const file = document.getElementById('comprobantePago').files[0];
+
+                    if (!monto || monto <= 0 || monto > pendiente) {
+                        Swal.showValidationMessage('Monto inválido o superior al saldo pendiente.');
+                        return false;
                     }
-                });
-            },
-            preConfirm: () => {
-                const monto = parseFloat(document.getElementById('montoPago').value);
-                const file = document.getElementById('comprobantePago').files[0];
 
-                if (!monto || monto <= 0 || monto > pendiente) {
-                    Swal.showValidationMessage('Monto inválido o superior al saldo pendiente.');
-                    return false;
+                    return {
+                        cuenta_id: cuentaId,
+                        monto: monto,
+                        metodo: document.getElementById('metodoPago').value,
+                        notas: document.getElementById('notasPago').value,
+                        archivo: file || null
+                    };
+                }
+            }).then(res => {
+                if (!res.isConfirmed) return;
+
+                const formData = new FormData();
+                formData.append('action', 'ajax_registrar_pago_cxc');
+                formData.append('cuenta_id', res.value.cuenta_id);
+                formData.append('monto_pagado', res.value.monto);
+                formData.append('metodo_pago', res.value.metodo);
+                formData.append('notas', res.value.notas);
+                if (res.value.archivo) {
+                    formData.append('comprobante_pago', res.value.archivo);
                 }
 
-                return {
-                    cuenta_id: cuentaId,
-                    monto: monto,
-                    metodo: document.getElementById('metodoPago').value,
-                    notas: document.getElementById('notasPago').value,
-                    archivo: file || null
-                };
-            }
-        }).then(res => {
-            if (!res.isConfirmed) return;
+                Swal.fire({ title: 'Procesando...', didOpen: () => Swal.showLoading() });
 
-            const formData = new FormData();
-            formData.append('action', 'ajax_registrar_pago_cxc');
-            formData.append('cuenta_id', res.value.cuenta_id);
-            formData.append('monto_pagado', res.value.monto);
-            formData.append('metodo_pago', res.value.metodo);
-            formData.append('notas', res.value.notas);
-            if (res.value.archivo) {
-                formData.append('comprobante_pago', res.value.archivo);
-            }
-
-            Swal.fire({ title: 'Procesando...', didOpen: () => Swal.showLoading() });
-
-            fetch(ajaxurl, {
-                method: 'POST',
-                body: formData
-            })
-            .then(r => r.json())
-            .then(resp => {
-                if (resp.success) {
-                    Swal.fire('Pago registrado', '', 'success');
-                    cargarCuentas();
-                } else {
-                    Swal.fire('❌ Error', resp.data?.message || 'No se pudo registrar el pago', 'error');
-                }
-            })
-            .catch(() => {
-                Swal.fire('❌ Error', 'Ocurrió un error inesperado.', 'error');
+                fetch(ajaxurl, {
+                    method: 'POST',
+                    body: formData
+                })
+                    .then(r => r.json())
+                    .then(resp => {
+                        if (resp.success) {
+                            Swal.fire('Pago registrado', '', 'success');
+                            cargarCuentas();
+                        } else {
+                            Swal.fire('❌ Error', resp.data?.message || 'No se pudo registrar el pago', 'error');
+                        }
+                    })
+                    .catch(() => {
+                        Swal.fire('❌ Error', 'Ocurrió un error inesperado.', 'error');
+                    });
             });
         });
-
     });
 
     $(document).on('click', '.ver-historial', function () {

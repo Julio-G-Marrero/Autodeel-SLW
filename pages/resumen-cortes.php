@@ -66,9 +66,30 @@ jQuery(document).ready(function($) {
                 $tabla.html('<tr><td colspan="7" class="text-center py-4">No se encontraron cortes.</td></tr>');
             } else {
                 let html = '';
-                res.data.cortes.forEach(corte => {
-                    // Tu render de filas...
-                });
+                    res.data.cortes.forEach(corte => {
+                        const estadoColor = corte.estado === 'abierta' ? 'text-yellow-600' : 'text-green-600';
+                        const voboLabel = corte.vobo_aprobado === '1'
+                            ? `<span class="text-green-600 font-semibold">✔ Autorizado</span>
+                            <button data-id="${corte.id}" class="btn-revertir-vobo text-xs text-red-600 hover:underline ml-2">Revertir</button>`
+                            : `<button data-id="${corte.id}" class="btn-vobo text-blue-600 hover:underline text-xs">Autorizar</button>`;
+
+                        html += `
+                            <tr class="border-b hover:bg-gray-50">
+                                <td class="px-4 py-2 font-mono">#${corte.id}</td>
+                                <td class="px-4 py-2">${corte.usuario}</td>
+                                <td class="px-4 py-2">${corte.fecha_apertura}</td>
+                                <td class="px-4 py-2">${corte.fecha_cierre || '-'}</td>
+                                <td class="px-4 py-2 text-green-600">$${corte.total_cierre}</td>
+                                <td class="px-4 py-2 ${estadoColor} capitalize">${corte.estado}</td>
+                                <td class="px-4 py-2">${voboLabel}</td>
+                                <td class="px-4 py-2">
+                                    <button data-id="${corte.id}" class="btn-ver-ticket-corte text-blue-600 hover:underline text-xs">
+                                        Ver Ticket
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                    });
                 $tabla.html(html);
             }
 

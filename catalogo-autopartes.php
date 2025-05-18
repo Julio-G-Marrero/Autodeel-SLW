@@ -1134,13 +1134,19 @@ add_action('wp_ajax_ajax_obtener_resumen_ventas', function () {
     $resultado = [];
 
     foreach ($ventas as $v) {
-        $user = get_userdata($v->cliente_id);
+        $nombre_cliente = get_user_meta($v->cliente_id, 'nombre_completo', true);
+
+        if (!$nombre_cliente) {
+            $user = get_userdata($v->cliente_id);
+            $nombre_cliente = $user ? ($user->display_name ?: $user->user_email) : 'Cliente eliminado';
+        }
+
         $resultado[] = [
-            'id'     => $v->id,
-            'cliente'=> $user ? $user->display_name : 'Cliente eliminado',
-            'total'  => number_format($v->total, 2),
-            'metodo' => $v->metodo_pago,
-            'fecha'  => date('Y-m-d H:i', strtotime($v->fecha))
+            'id'      => $v->id,
+            'cliente' => $nombre_cliente,
+            'total'   => number_format($v->total, 2),
+            'metodo'  => $v->metodo_pago,
+            'fecha'   => date('Y-m-d H:i', strtotime($v->fecha))
         ];
     }
 
@@ -2100,6 +2106,156 @@ function ajax_registrar_cliente() {
     wp_send_json_success(['message' => 'Cliente creado con éxito']);
 }
 
+add_action('wp_ajax_ajax_obtener_devoluciones_admin', function () {
+    global $wpdb;
+
+    $cliente   = sanitize_text_field($_POST['cliente'] ?? '');
+    $estado    = sanitize_text_field($_POST['estado'] ?? '');
+    $desde     = sanitize_text_field($_POST['desde'] ?? '');
+    $hasta     = sanitize_text_field($_POST['hasta'] ?? '');
+
+    $pagina     = max(1, intval($_POST['pagina'] ?? 1));
+    $por_pagina = 15;
+    $offset     = ($pagina - 1) * $por_pagina;
+
+    $where  = '1=1';
+    $params = [];
+
+    // Buscar por cliente (display_name o correo)
+    if (!empty($cliente)) {
+        $user_ids = get_users([
+            'search'         => '*' . esc_attr($cliente) . '*',
+            'search_columns' => ['display_name', 'user_email'],
+            'fields'         => ['ID']
+        ]);
+
+        if (!empty($user_ids)) {
+            $placeholders = implode(',', array_fill(0, count($user_ids), '%d'));
+            $where .= " AND cliente_id IN ($placeholders)";
+            $params = array_merge($params, array_map('intval', $user_ids));
+        } else {
+            wp_send_json_success([
+                'devoluciones' => [],
+                'total_paginas' => 0
+            ]);
+        }
+    }
+
+    if (!empty($estado)) {
+        $where .= " AND estado_revision = %s";
+        $params[] = $estado;
+    }
+
+    if (!empty($desde)) {
+        $where .= " AND fecha_solicitud >= %s";
+        $params[] = $desde . ' 00:00:00';
+    }
+    if (!empty($hasta)) {
+        $where .= " AND fecha_solicitud <= %s";
+        $params[] = $hasta . ' 23:59:59';
+    }
+
+    // Total
+    $total = $wpdb->get_var(
+        $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}devoluciones_autopartes WHERE $where", ...$params)
+    );
+
+    // Resultados paginados
+    $query = $wpdb->prepare("
+        SELECT * FROM {$wpdb->prefix}devoluciones_autopartes
+        WHERE $where
+        ORDER BY fecha_solicitud DESC
+        LIMIT %d OFFSET %d
+    ", ...array_merge($params, [$por_pagina, $offset]));
+
+    $resultados = $wpdb->get_results($query);
+    $devoluciones = [];
+
+    foreach ($resultados as $d) {
+        $cliente_id = intval($d->cliente_id);
+        $user = get_userdata($cliente_id);
+
+        $cliente_nombre = 'Cliente eliminado o no encontrado';
+        if ($user && !is_wp_error($user)) {
+            $cliente_nombre = $user->display_name ?: $user->user_login;
+        }
+
+        $producto = wc_get_product($d->producto_id);
+        $producto_nombre = $producto ? $producto->get_name() : 'Producto eliminado';
+
+        $devoluciones[] = [
+            'id'       => $d->id,
+            'cliente'  => $cliente_nombre,
+            'producto' => $producto_nombre,
+            'motivo'   => $d->motivo_cliente,
+            'estado'   => $d->estado_revision,
+            'fecha'    => date('Y-m-d H:i', strtotime($d->fecha_solicitud)),
+        ];
+    }
+
+    wp_send_json_success([
+        'devoluciones'   => $devoluciones,
+        'total_paginas'  => ceil($total / $por_pagina)
+    ]);
+});
+
+// Obtener detalle de la devolución para el modal
+add_action('wp_ajax_ajax_obtener_detalle_devolucion', function () {
+    global $wpdb;
+
+    $id = intval($_POST['devolucion_id'] ?? 0); // 🔧 Corrección aquí
+    if (!$id) wp_send_json_error(['message' => 'ID no válido.']);
+
+    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}devoluciones_autopartes WHERE id = %d", $id));
+    if (!$row) wp_send_json_error(['message' => 'Devolución no encontrada.']);
+
+    $cliente = get_userdata($row->cliente_id);
+    $producto = wc_get_product($row->producto_id);
+    $evidencias = maybe_unserialize($row->evidencia_urls);
+
+    wp_send_json_success([
+        'id'         => $row->id,
+        'cliente'    => $cliente ? $cliente->display_name : 'Cliente eliminado',
+        'producto'   => $producto ? $producto->get_name() : 'Producto eliminado',
+        'motivo'     => $row->motivo_cliente,
+        'estado'     => $row->estado_revision,
+        'evidencias' => is_array($evidencias) ? $evidencias : []
+    ]);
+});
+
+// Guardar la resolución de una devolución
+add_action('wp_ajax_ajax_guardar_resolucion_devolucion', function () {
+    global $wpdb;
+
+    $id = intval($_POST['devolucion_id'] ?? 0);
+    $resolucion = sanitize_text_field($_POST['resolucion'] ?? '');
+    $notas = sanitize_textarea_field($_POST['notas'] ?? '');
+    $usuario_id = get_current_user_id();
+
+    if (!$id || !$resolucion || !$usuario_id) {
+        wp_send_json_error(['message' => 'Faltan datos obligatorios.']);
+    }
+
+    $resoluciones_validas = ['reintegrado', 'reparacion', 'baja_definitiva'];
+    if (!in_array($resolucion, $resoluciones_validas)) {
+        wp_send_json_error(['message' => 'Resolución no válida.']);
+    }
+
+    $actualizado = $wpdb->update("{$wpdb->prefix}devoluciones_autopartes", [
+        'estado_revision'     => 'resuelto',
+        'resolucion_final'    => $resolucion,
+        'notas_revision'      => $notas,
+        'usuario_revision_id' => $usuario_id,
+        'fecha_revision'      => current_time('mysql')
+    ], ['id' => $id]);
+
+    if ($actualizado === false) {
+        error_log("Error al actualizar devolución ID $id: " . $wpdb->last_error);
+        wp_send_json_error(['message' => 'No se pudo guardar la resolución.']);
+    }
+
+    wp_send_json_success(['message' => 'Resolución guardada correctamente.']);
+});
 
 add_action('wp_ajax_ajax_buscar_producto_avanzado', 'ajax_buscar_producto_avanzado');
 function ajax_buscar_producto_avanzado() {
@@ -3050,13 +3206,8 @@ add_filter('woocommerce_my_account_my_orders_actions', function($actions, $order
     $estado_armado = get_post_meta($order->get_id(), '_estado_armado', true);
     $metodo_pago = $order->get_payment_method();
 
-    // Validar que el pedido no esté completado o cancelado
-    if ($order->has_status(['completed', 'cancelled', 'failed'])) {
-        return $actions;
-    }
-
-    // Mostrar botón solo si el estado armado es "enviado"
-    if ($estado_armado === 'enviado') {
+    // Recibir (si estado enviado)
+    if ($estado_armado === 'enviado' && !$order->has_status(['completed', 'cancelled', 'failed'])) {
         $actions['recibir'] = [
             'url'  => '#',
             'name' => 'Recibir',
@@ -3065,6 +3216,22 @@ add_filter('woocommerce_my_account_my_orders_actions', function($actions, $order
                 'metodo' => $metodo_pago
             ]
         ];
+    }
+
+    // ✅ Nueva lógica: Solicitar devolución (si estado recibido y dentro de 15 días)
+    if ($estado_armado === 'recibido' || $estado_armado === 'entregado') {
+        $fecha_completado = strtotime($order->get_date_completed());
+        $dias_transcurridos = (time() - $fecha_completado) / (60 * 60 * 24);
+
+        if ($dias_transcurridos <= 15) {
+            $actions['devolver'] = [
+                'url'  => '#',
+                'name' => 'Solicitar Devolución',
+                'custom_data' => [
+                    'order-id' => $order->get_id()
+                ]
+            ];
+        }
     }
 
     return $actions;
@@ -3348,6 +3515,107 @@ add_action('wp_enqueue_scripts', function () {
     wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', [], null, true);
 });
 
+// ✅ Endpoint para obtener los productos de un pedido
+add_action('wp_ajax_ajax_obtener_productos_orden', 'ajax_obtener_productos_orden');
+function ajax_obtener_productos_orden() {
+    $order_id = intval($_POST['order_id'] ?? 0);
+    $current_user = get_current_user_id();
+
+    if (!$order_id) {
+        wp_send_json_error(['message' => 'ID de pedido no válido']);
+    }
+
+    $order = wc_get_order($order_id);
+
+    if (!$order || $order->get_user_id() !== $current_user) {
+        wp_send_json_error(['message' => 'No autorizado o pedido inválido']);
+    }
+
+    $productos = [];
+
+    foreach ($order->get_items() as $item) {
+        $product = $item->get_product();
+        if ($product) {
+            $productos[] = [
+                'product_id' => $product->get_id(),
+                'nombre' => $product->get_name(),
+                'sku' => $product->get_sku()
+            ];
+        }
+    }
+
+    wp_send_json_success($productos);
+}
+
+// ✅ Endpoint para registrar la solicitud de devolución
+add_action('wp_ajax_ajax_solicitar_devolucion_cliente', function () {
+    global $wpdb;
+
+    $cliente_id   = get_current_user_id();
+    $producto_id  = intval($_POST['producto_id'] ?? 0);
+    $order_id     = intval($_POST['order_id'] ?? 0);
+    $motivo       = sanitize_text_field($_POST['motivo'] ?? '');
+
+    if (!$cliente_id || !$producto_id || !$order_id || empty($motivo)) {
+        wp_send_json_error(['message' => 'Faltan datos obligatorios.']);
+    }
+
+    // Obtener venta asociada si existe
+    $venta_id = $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM {$wpdb->prefix}ventas_autopartes WHERE woo_order_id = %d LIMIT 1",
+        $order_id
+    ));
+
+    if (!$venta_id) {
+        $venta_id = null; // Permitir devoluciones de pedidos Woo sin POS
+    }
+
+    // Subir evidencia si se envía
+    $evidencias = [];
+    if (!empty($_FILES['evidencia']['name'])) {
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+
+        $file = media_handle_upload('evidencia', 0);
+        if (!is_wp_error($file)) {
+            $evidencias[] = wp_get_attachment_url($file);
+        }
+    }
+
+    // Serializar y preparar evidencia
+    $evidencia_serializada = maybe_serialize($evidencias);
+
+    // Insertar devolución
+    $insertado = $wpdb->insert("{$wpdb->prefix}devoluciones_autopartes", [
+        'venta_id'        => $venta_id,
+        'producto_id'     => $producto_id,
+        'cliente_id'      => $cliente_id,
+        'motivo_cliente'  => $motivo,
+        'evidencia_urls'  => $evidencia_serializada,
+        'estado_revision' => 'pendiente',
+        'fecha_solicitud' => current_time('mysql')
+    ]);
+
+    if (!$insertado) {
+        error_log('❌ Error al registrar devolución: ' . $wpdb->last_error);
+        wp_send_json_error(['message' => 'Error al registrar la devolución.']);
+    }
+
+    wp_send_json_success(['message' => 'Solicitud de devolución registrada.']);
+});
+
+add_action('wp_enqueue_scripts', function() {
+    if (is_account_page()) {
+        wp_enqueue_style(
+            'tailwindcdn',
+            'https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css',
+            [],
+            null
+        );
+    }
+});
+
 add_action('wp_ajax_obtener_datos_pedido', function () {
     $pedido_id = intval($_POST['pedido_id'] ?? 0);
     if (!$pedido_id) {
@@ -3371,108 +3639,204 @@ add_action('wp_footer', function () {
     $oc_obligatoria = get_user_meta($user_id, 'oc_obligatoria', true);
     ?>
     <script>
-    jQuery(document).ready(function ($) {
-        // Agrega los atributos data-order y luego espera que estén listos
-        $('.woocommerce-button.recibir').each(function () {
-            const $btn = $(this);
-            const href = $btn.siblings('a.view').attr('href') || '';
-            const match = href.match(/view-order\/(\d+)/);
-            if (!match) return;
+        jQuery(document).ready(function ($) {
+            const ajaxUrl = '<?php echo admin_url('admin-ajax.php'); ?>';
+            const ocObligatoria = <?php echo json_encode(get_user_meta(get_current_user_id(), 'oc_obligatoria', true) === '1'); ?>;
 
-            const orderId = match[1];
-            $btn.attr('data-order', orderId);
+            // ✅ BOTÓN "RECIBIR"
+            $('.woocommerce-button.recibir').each(function () {
+                const $btn = $(this);
+                const href = $btn.siblings('a.view').attr('href') || '';
+                const match = href.match(/view-order\/(\d+)/);
+                if (!match) return;
 
-            // Recuperar el método de pago
-            $.post('<?php echo admin_url('admin-ajax.php'); ?>', {
-                action: 'obtener_metodo_pago_pedido',
-                order_id: orderId
-            }, function (resp) {
-                if (resp.success && resp.data.metodo) {
-                    $btn.attr('data-metodo', resp.data.metodo);
-                    $btn.attr('data-loaded', 'true');
-                }
+                const orderId = match[1];
+                $btn.attr('data-order', orderId);
+
+                $.post(ajaxUrl, {
+                    action: 'obtener_metodo_pago_pedido',
+                    order_id: orderId
+                }, function (resp) {
+                    if (resp.success && resp.data.metodo) {
+                        $btn.attr('data-metodo', resp.data.metodo);
+                        $btn.attr('data-loaded', 'true');
+                    }
+                });
             });
-        });
 
-        $(document).on('click', '.woocommerce-button.recibir', function (e) {
-            e.preventDefault();
-            const $btn = $(this);
-            const orderId = $btn.data('order');
+            // Botones "devolver"
+            $('.woocommerce-button.devolver').each(function () {
+                const $btn = $(this);
+                const href = $btn.siblings('a.view').attr('href') || '';
+                const match = href.match(/view-order\/(\d+)/);
+                if (!match) return;
 
-            const waitForData = () => {
-                const metodo = $btn.data('metodo');
-                const loaded = $btn.data('loaded') === true || $btn.data('loaded') === 'true';
-                const ocObligatoria = <?php echo json_encode($oc_obligatoria === '1'); ?>;
+                const orderId = match[1];
+                $btn.attr('data-order', orderId);
+            });
 
-                if (!loaded) {
-                    setTimeout(waitForData, 100); // espera 100ms y vuelve a intentar
-                    return;
-                }
+            $(document).on('click', '.woocommerce-button.recibir', function (e) {
+                e.preventDefault();
+                const $btn = $(this);
+                const orderId = $btn.data('order');
 
-                let html = `<p class="mb-2">¿Deseas confirmar la recepción del pedido <strong>#${orderId}</strong>?</p>`;
+                const waitForData = () => {
+                    const metodo = $btn.data('metodo');
+                    const loaded = $btn.data('loaded') === true || $btn.data('loaded') === 'true';
 
-                if (metodo === 'credito_cliente' && ocObligatoria) {
-                    html += `
-                    <div class="text-left">
-                        <label class="block font-medium mb-1">Sube tu Orden de Compra (PDF o imagen):</label>
-                        <input type="file" id="oc_file" class="swal2-file" accept="application/pdf,image/*" required />
-                    </div>`;
-                }
+                    if (!loaded) return setTimeout(waitForData, 100);
+
+                    let html = `<p class="mb-2">¿Deseas confirmar la recepción del pedido <strong>#${orderId}</strong>?</p>`;
+
+                    if (metodo === 'credito_cliente' && ocObligatoria) {
+                        html += `
+                            <div class="text-left mt-2">
+                                <label class="block font-medium mb-1">Sube tu Orden de Compra (PDF o imagen):</label>
+                                <input type="file" id="oc_file" class="swal2-file" accept="application/pdf,image/*" required />
+                            </div>`;
+                    }
+
+                    Swal.fire({
+                        title: 'Recibir Pedido',
+                        html,
+                        showCancelButton: true,
+                        confirmButtonText: 'Confirmar',
+                        focusConfirm: false,
+                        preConfirm: () => {
+                            if (metodo === 'credito_cliente' && ocObligatoria) {
+                                const fileInput = document.getElementById('oc_file');
+                                const file = fileInput?.files?.[0];
+                                if (!file) {
+                                    Swal.showValidationMessage('Debes subir una orden de compra.');
+                                    return false;
+                                }
+                                return { archivo: file };
+                            }
+                            return true;
+                        }
+                    }).then(result => {
+                        if (!result.isConfirmed) return;
+
+                        const formData = new FormData();
+                        formData.append('action', 'ajax_recibir_pedido_credito_cliente');
+                        formData.append('order_id', orderId);
+                        if (result.value?.archivo) {
+                            formData.append('orden_compra', result.value.archivo);
+                        }
+
+                        Swal.fire({ title: 'Procesando...', didOpen: () => Swal.showLoading() });
+
+                        fetch(ajaxUrl, {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(res => res.json())
+                        .then(resp => {
+                            if (resp.success) {
+                                Swal.fire('Pedido recibido', resp.data.message, 'success').then(() => location.reload());
+                            } else {
+                                Swal.fire('❌ Error', resp.data?.message || 'No se pudo procesar.', 'error');
+                            }
+                        })
+                        .catch(() => {
+                            Swal.fire('❌ Error', 'Error inesperado de red.', 'error');
+                        });
+                    });
+                };
+
+                waitForData();
+            });
+
+            // ✅ BOTÓN "DEVOLVER"
+            $(document).on('click', '.woocommerce-button.devolver', function (e) {
+                e.preventDefault();
+                const $btn = $(this);
+                const orderId = $btn.data('order');
 
                 Swal.fire({
-                    title: 'Recibir Pedido',
-                    html: html,
+                    title: 'Solicitar Devolución',
+                    html: `
+                        <div class="text-left text-sm space-y-4" style="font-family: sans-serif;">
+                            <div>
+                                <label for="productoDev" class="block font-medium mb-1 text-gray-700">Producto a devolver</label>
+                                <select id="productoDev" class="swal2-select w-full border border-gray-300 rounded m-0 p-0"></select>
+                            </div>
+
+                            <div>
+                                <label for="motivoDev" class="block font-medium mb-1 text-gray-700">Motivo de la devolución</label>
+                                <textarea id="motivoDev" rows="3" class="swal2-textarea w-full border border-gray-300 rounded m-0 p-0 text-sm" placeholder="Describe el motivo con claridad..."></textarea>
+                            </div>
+
+                            <div>
+                                <label for="evidenciaDev" class="block font-medium mb-1 text-gray-700">📎 Evidencia (opcional)</label>
+                                <input type="file" id="evidenciaDev" accept="image/*,application/pdf" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+                                <p class="text-xs text-gray-500 mt-1">Puedes subir una foto o archivo PDF que respalde tu solicitud.</p>
+                            </div>
+                        </div>
+                    `,
                     showCancelButton: true,
-                    confirmButtonText: 'Confirmar',
-                    focusConfirm: false,
-                    preConfirm: () => {
-                        if (metodo === 'credito_cliente' && ocObligatoria) {
-                            const fileInput = document.getElementById('oc_file');
-                            const file = fileInput?.files?.[0];
-                            if (!file) {
-                                Swal.showValidationMessage('Debes subir una orden de compra.');
-                                return false;
+                    confirmButtonText: 'Enviar Solicitud',
+                    cancelButtonText: 'Cancelar',
+                    customClass: {
+                        confirmButton: 'bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700',
+                        cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded ml-2 hover:bg-gray-300'
+                    },
+                    buttonsStyling: false,
+                    didOpen: () => {
+                        $.post(ajaxUrl, {
+                            action: 'ajax_obtener_productos_orden',
+                            order_id: orderId
+                        }, function (res) {
+                            if (res.success && res.data.length > 0) {
+                                const $select = $('#productoDev');
+                                res.data.forEach(p => {
+                                    $select.append(`<option value="${p.product_id}">${p.nombre}</option>`);
+                                });
+                            } else {
+                                $('#productoDev').html('<option value="">No hay productos disponibles</option>');
                             }
-                            return { archivo: file };
+                        });
+                    },
+                    preConfirm: () => {
+                        const motivo = $('#motivoDev').val().trim();
+                        const archivo = $('#evidenciaDev')[0].files[0];
+                        const producto_id = $('#productoDev').val();
+
+                        if (!motivo || !producto_id) {
+                            Swal.showValidationMessage('Debes seleccionar un producto y escribir el motivo.');
+                            return false;
                         }
-                        return true;
+
+                        const formData = new FormData();
+                        formData.append('action', 'ajax_solicitar_devolucion_cliente');
+                        formData.append('order_id', orderId);
+                        formData.append('producto_id', producto_id);
+                        formData.append('motivo', motivo);
+                        if (archivo) formData.append('evidencia', archivo);
+
+                        return fetch(ajaxUrl, {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(r => r.json())
+                        .then(resp => {
+                            if (!resp.success) throw new Error(resp.data?.message || 'Error en la solicitud');
+                            return resp;
+                        })
+                        .catch(e => {
+                            Swal.showValidationMessage(e.message);
+                        });
                     }
                 }).then(result => {
-                    if (!result.isConfirmed) return;
-
-                    const formData = new FormData();
-                    formData.append('action', 'ajax_recibir_pedido_credito_cliente');
-                    formData.append('order_id', orderId);
-                    if (result.value?.archivo) {
-                        formData.append('orden_compra', result.value.archivo);
+                    if (result.isConfirmed) {
+                        Swal.fire('Solicitud enviada', 'Tu devolución ha sido registrada.', 'success');
                     }
-
-                    Swal.fire({ title: 'Procesando...', didOpen: () => Swal.showLoading() });
-
-                    fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(res => res.json())
-                    .then(resp => {
-                        if (resp.success) {
-                            Swal.fire('Pedido recibido', resp.data.message, 'success').then(() => {
-                                location.reload();
-                            });
-                        } else {
-                            Swal.fire('❌ Error', resp.data?.message || 'No se pudo procesar.', 'error');
-                        }
-                    })
-                    .catch(() => {
-                        Swal.fire('❌ Error', 'Error inesperado de red.', 'error');
-                    });
                 });
-            };
 
-            waitForData();
+            });
         });
-    });
-    </script>
+        </script>
+
     <?php
 });
 
