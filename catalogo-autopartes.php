@@ -1795,7 +1795,7 @@ function catalogo_autopartes_registrar_capacidades_personalizadas() {
         'armado_de_pedido',
         'ver_asignar_ubicaciones_qr',
         'gestion_negociaciones',
-        'gestion_devoluciiones',
+        'gestion_devoluciones',
         'gestion_reparaciones',
         'gestion_rembolsos'
         // Agrega aquí cualquier otra capacidad personalizada
