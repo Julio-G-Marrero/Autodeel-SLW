@@ -41,9 +41,179 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
         </table>
     </div>
 </div>
+<template id="templateFormularioCliente">
+    <form id="formEditarCliente" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-left">
+        <input type="hidden" id="edit_user_id" />
 
+        <div>
+            <label class="block font-medium mb-1">Nombre / Razón Social</label>
+            <input type="text" id="edit_nombre" class="w-full border rounded px-3 py-2" />
+        </div>
+
+        <div>
+            <label class="block font-medium mb-1">Correo Electrónico</label>
+            <input type="email" id="edit_correo" class="w-full border rounded px-3 py-2" disabled />
+        </div>
+
+        <div>
+            <label class="block font-medium mb-1">Teléfono</label>
+            <input type="text" id="edit_telefono" class="w-full border rounded px-3 py-2" />
+        </div>
+
+        <div>
+            <label class="block font-medium mb-1">Tipo de Cliente</label>
+            <select id="edit_tipo" class="w-full border rounded px-3 py-2">
+                <option value="externo">Externo</option>
+                <option value="interno">Interno</option>
+                <option value="distribuidor">Distribuidor</option>
+            </select>
+        </div>
+
+        <div class="col-span-2">
+            <label class="inline-flex items-center">
+                <input type="checkbox" id="edit_checkCredito" class="mr-2" />
+                <span class="font-medium">¿Dispone de Crédito?</span>
+            </label>
+        </div>
+
+        <div id="edit_camposCredito" class="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 hidden">
+            <div>
+                <label class="block font-medium mb-1">Estado del Crédito</label>
+                <select id="edit_estado_credito" class="w-full border rounded px-3 py-2">
+                    <option value="activo">Activo</option>
+                    <option value="suspendido">Suspendido</option>
+                </select>
+            </div>
+            <div>
+                <label class="block font-medium mb-1">¿Orden de Compra Obligatoria?</label>
+                <select id="edit_oc" class="w-full border rounded px-3 py-2">
+                    <option value="0">No</option>
+                    <option value="1">Sí</option>
+                </select>
+            </div>
+            <div>
+                <label class="block font-medium mb-1">Crédito Disponible</label>
+                <input type="number" id="edit_credito" class="w-full border rounded px-3 py-2" min="0" />
+            </div>
+            <div>
+                <label class="block font-medium mb-1">Días de Crédito</label>
+                <input type="number" id="edit_dias" class="w-full border rounded px-3 py-2" min="0" />
+            </div>
+        </div>
+
+        <div class="col-span-2">
+            <label class="block font-medium mb-1">Canal de Venta</label>
+            <select id="edit_canal" class="w-full border rounded px-3 py-2">
+                <option value="Diverso">Diverso</option>
+                <option value="Facebook Marketplace">Facebook Marketplace</option>
+                <option value="Mercado Libre">Mercado Libre</option>
+                <option value="Punto de Venta">Punto de Venta</option>
+            </select>
+        </div>
+
+        <div class="col-span-2">
+            <label class="block font-medium mb-1">Perfil de Descuento</label>
+            <select id="edit_rol" class="w-full border rounded px-3 py-2">
+                <option value="customer">Customer</option>
+                <option value="wholesale_customer">Wholesale Customer</option>
+                <option value="wholesale_talleres_crash">Talleres Crash</option>
+            </select>
+        </div>
+
+        <div class="col-span-2">
+            <label class="inline-flex items-center">
+                <input type="checkbox" id="edit_checkFacturacion" class="mr-2" />
+                <span class="font-medium">¿Desea agregar datos de facturación?</span>
+            </label>
+        </div>
+
+        <div id="edit_camposFacturacion" class="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 hidden">
+            <div>
+                <label class="block font-medium mb-1">Razón Social</label>
+                <input type="text" id="edit_razon_social" class="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+                <label class="block font-medium mb-1">RFC</label>
+                <input type="text" id="edit_rfc" class="w-full border rounded px-3 py-2 uppercase" maxlength="13" />
+            </div>
+            <div>
+                <label class="block font-medium mb-1">Uso de CFDI</label>
+                <select id="edit_uso_cfdi" class="w-full border rounded px-3 py-2">
+                    <option value="">Seleccione</option>
+                    <option value="G03">G03 - Gastos en general</option>
+                    <option value="P01">P01 - Por definir</option>
+                    <option value="D01">D01 - Honorarios médicos</option>
+                </select>
+            </div>
+            <div>
+                <label class="block font-medium mb-1">Régimen Fiscal</label>
+                <select id="edit_regimen_fiscal" class="w-full border rounded px-3 py-2">
+                    <option value="">Seleccione</option>
+                    <option value="601">601 - General de Ley Personas Morales</option>
+                    <option value="612">612 - Personas Físicas con Actividades Empresariales</option>
+                    <option value="622">622 - Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras</option>
+                </select>
+            </div>
+
+            <div class="md:col-span-2 font-semibold text-gray-700 pt-2">Dirección Fiscal</div>
+
+            <div>
+                <label class="block font-medium mb-1">Calle y número</label>
+                <input type="text" id="edit_fact_calle" class="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+                <label class="block font-medium mb-1">Colonia</label>
+                <input type="text" id="edit_fact_colonia" class="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+                <label class="block font-medium mb-1">Municipio / Delegación</label>
+                <input type="text" id="edit_fact_municipio" class="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+                <label class="block font-medium mb-1">Estado</label>
+                <input type="text" id="edit_fact_estado" class="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+                <label class="block font-medium mb-1">Código Postal</label>
+                <input type="text" id="edit_fact_cp" class="w-full border rounded px-3 py-2" maxlength="5" />
+            </div>
+            <div>
+                <label class="block font-medium mb-1">País</label>
+                <input type="text" id="edit_fact_pais" class="w-full border rounded px-3 py-2" value="México" />
+            </div>
+        </div>
+    </form>
+</template>
 <script>
+const rolActual = "<?php echo esc_js(wp_get_current_user()->roles[0] ?? ''); ?>";
 jQuery(document).ready(function($) {
+    $('#tablaClientes').off('click', '.eliminar-cliente').on('click', '.eliminar-cliente', function () {
+        const userId = $(this).data('id');
+        const nombre = $(this).data('nombre');
+
+        Swal.fire({
+            title: `¿Eliminar cliente?`,
+            text: `Esta acción eliminará al cliente "${nombre}". Esta acción no se puede deshacer.`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText: 'Cancelar'
+        }).then(result => {
+            if (!result.isConfirmed) return;
+
+            $.post(ajaxurl, {
+                action: 'ajax_eliminar_cliente',
+                user_id: userId
+            }, function (res) {
+                if (res.success) {
+                    Swal.fire('Eliminado', res.data.message || 'Cliente eliminado correctamente', 'success');
+                    cargarClientes();
+                } else {
+                    Swal.fire('Error', res.data.message || 'No se pudo eliminar el cliente', 'error');
+                }
+            });
+        });
+    });
     function cargarClientes() {
         const busqueda = $('#filtroBusqueda').val().toLowerCase().trim();
         const estado = $('#filtroEstado').val();
@@ -60,6 +230,8 @@ jQuery(document).ready(function($) {
                 return;
             }
 
+            const puedeEditar = rolActual === 'administrator' || rolActual === 'cobranza';
+
             const rows = res.data.map(cliente => `
                 <tr class="border-t text-sm text-gray-700">
                     <td class="px-2 py-2">${cliente.nombre}</td>
@@ -69,7 +241,10 @@ jQuery(document).ready(function($) {
                     <td class="px-2 py-2">${cliente.estado_credito}</td>
                     <td class="px-2 py-2">${cliente.canal_venta}</td>
                     <td class="px-2 py-2">
-                        <button class="text-blue-600 editar-cliente" data-id="${cliente.id}">Editar</button>
+                        ${puedeEditar ? `
+                            <button class="text-blue-600 editar-cliente mr-2" data-id="${cliente.id}">Editar</button>
+                            <button class="text-red-600 eliminar-cliente" data-id="${cliente.id}" data-nombre="${cliente.nombre}">Eliminar</button>
+                        ` : ''}
                     </td>
                 </tr>
             `).join('');
@@ -85,94 +260,98 @@ jQuery(document).ready(function($) {
                     if (!res.success) return alert('Error al obtener cliente');
 
                     const c = res.data;
+                Swal.fire({
+                    title: 'Editar Cliente',
+                    html: $('#templateFormularioCliente').html(),
+                    width: '60em',
+                    showCancelButton: true,
+                    confirmButtonText: 'Guardar cambios',
+                    didOpen: () => {
+                        // Rellenar valores
+                        $('#edit_user_id').val(c.id);
+                        $('#edit_nombre').val(c.nombre);
+                        $('#edit_correo').val(c.correo);
+                        $('#edit_telefono').val(c.telefono);
+                        $('#edit_tipo').val(c.tipo_cliente);
+                        $('#edit_credito').val(c.credito_disponible);
+                        $('#edit_dias').val(c.dias_credito);
+                        $('#edit_oc').val(c.oc_obligatoria);
+                        $('#edit_estado_credito').val(c.estado_credito);
+                        $('#edit_rol').val(c.rol_slug);
+                        $('#edit_canal').val(c.canal_venta);
+                        $('#edit_rfc').val(c.rfc);
+                        $('#edit_razon_social').val(c.razon_social);
+                        $('#edit_uso_cfdi').val(c.uso_cfdi);
+                        $('#edit_regimen_fiscal').val(c.regimen_fiscal);
+                        $('#edit_fact_calle').val(c.fact_calle);
+                        $('#edit_fact_colonia').val(c.fact_colonia);
+                        $('#edit_fact_municipio').val(c.fact_municipio);
+                        $('#edit_fact_estado').val(c.fact_estado);
+                        $('#edit_fact_cp').val(c.fact_cp);
+                        $('#edit_fact_pais').val(c.fact_pais || 'México');
 
-                    Swal.fire({
-                        title: 'Editar Cliente',
-                        html: `
-                        <input type="hidden" id="user_id" value="${c.id}">
-                        <div style="display: flex; flex-direction: column; gap: 12px; text-align: left; font-size: 14px;">
-
-                            <div>
-                            <label>Nombre / Razón Social</label><br>
-                            <input id="edit_nombre" class="swal2-input" style="width: 100%;" value="${c.nombre}">
-                            </div>
-
-                            <div style="display: flex; gap: 10px;">
-                            <div style="flex: 1;">
-                                <label>Tipo de Cliente</label><br>
-                                <select id="edit_tipo" class="swal2-input" style="width: 100%;">
-                                <option value="externo" ${c.tipo_cliente === 'externo' ? 'selected' : ''}>Externo</option>
-                                <option value="interno" ${c.tipo_cliente === 'interno' ? 'selected' : ''}>Interno</option>
-                                <option value="distribuidor" ${c.tipo_cliente === 'distribuidor' ? 'selected' : ''}>Distribuidor</option>
-                                </select>
-                            </div>
-                            <div style="flex: 1;">
-                                <label>Estado del Crédito</label><br>
-                                <select id="edit_estado_credito" class="swal2-input" style="width: 100%;">
-                                <option value="activo" ${c.estado_credito === 'activo' ? 'selected' : ''}>Activo</option>
-                                <option value="suspendido" ${c.estado_credito === 'suspendido' ? 'selected' : ''}>Suspendido</option>
-                                </select>
-                            </div>
-                            </div>
-
-                            <div style="display: flex; gap: 10px;">
-                            <div style="flex: 1;">
-                                <label>Crédito Disponible</label><br>
-                                <input id="edit_credito" type="number" min="0" class="swal2-input" style="width: 100%;" value="${c.credito_disponible}">
-                            </div>
-                            <div style="flex: 1;">
-                                <label>Días de Crédito</label><br>
-                                <input id="edit_dias" type="number" min="0" class="swal2-input" style="width: 100%;" value="${c.dias_credito}">
-                            </div>
-                            </div>
-                            <div>
-                                <label>Rol / Perfil de Descuento</label><br>
-                                <select id="edit_rol" class="swal2-input" style="width: 100%;">
-                                    <option value="customer" ${c.rol_slug === 'customer' ? 'selected' : ''}>Customer</option>
-                                    <option value="wholesale_customer" ${c.rol_slug === 'wholesale_customer' ? 'selected' : ''}>Wholesale Customer</option>
-                                    <option value="wholesale_talleres_crash" ${c.rol_slug === 'wholesale_talleres_crash' ? 'selected' : ''}>Talleres Crash</option>
-                                </select>
-                            </div>
-                            <div>
-                            <label>¿Orden de Compra Obligatoria?</label><br>
-                            <select id="edit_oc" class="swal2-input" style="width: 100%;">
-                                <option value="0" ${c.oc_obligatoria == 0 ? 'selected' : ''}>No</option>
-                                <option value="1" ${c.oc_obligatoria == 1 ? 'selected' : ''}>Sí</option>
-                            </select>
-                            </div>
-
-                        </div>
-                        `,
-                        showCancelButton: true,
-                        confirmButtonText: 'Guardar cambios',
-                        preConfirm: () => {
-                            return {
-                                user_id: $('#user_id').val(),
-                                nombre: $('#edit_nombre').val(),
-                                tipo: $('#edit_tipo').val(),
-                                estado_credito: $('#edit_estado_credito').val(),
-                                credito: $('#edit_credito').val(),
-                                dias: $('#edit_dias').val(),
-                                canal: $('#edit_canal').val(),
-                                oc: $('#edit_oc').val(),
-                                rol: $('#edit_rol').val()
-                            };
+                        // Mostrar campos de crédito si aplica
+                        if (parseFloat(c.credito_disponible) > 0 || c.estado_credito === 'activo') {
+                            $('#edit_checkCredito').prop('checked', true);
+                            $('#edit_camposCredito').removeClass('hidden');
                         }
-                    }).then(result => {
-                        if (!result.isConfirmed) return;
 
-                        $.post(ajaxurl, {
-                            action: 'ajax_actualizar_cliente',
-                            ...result.value
-                        }, function (r) {
-                            if (r.success) {
-                                Swal.fire('¡Actualizado!', 'Cliente editado con éxito', 'success');
-                                cargarClientes();
-                            } else {
-                                Swal.fire('Error', 'No se pudo guardar los cambios', 'error');
-                            }
+                        // Mostrar campos de facturación si hay datos
+                        if (c.rfc || c.razon_social) {
+                            $('#edit_checkFacturacion').prop('checked', true);
+                            $('#edit_camposFacturacion').removeClass('hidden');
+                        }
+
+                        // Listeners para mostrar/ocultar dinámicamente
+                        $('#edit_checkCredito').on('change', function () {
+                            $('#edit_camposCredito').toggleClass('hidden', !this.checked);
                         });
+
+                        $('#edit_checkFacturacion').on('change', function () {
+                            $('#edit_camposFacturacion').toggleClass('hidden', !this.checked);
+                        });
+                    },
+                    preConfirm: () => {
+                        return {
+                            user_id: $('#edit_user_id').val(),
+                            nombre: $('#edit_nombre').val(),
+                            correo: $('#edit_correo').val(),
+                            telefono: $('#edit_telefono').val(),
+                            tipo: $('#edit_tipo').val(),
+                            credito: $('#edit_credito').val(),
+                            dias: $('#edit_dias').val(),
+                            estado_credito: $('#edit_estado_credito').val(),
+                            oc: $('#edit_oc').val(),
+                            canal: $('#edit_canal').val(),
+                            rol: $('#edit_rol').val(),
+                            razon_social: $('#edit_razon_social').val(),
+                            rfc: $('#edit_rfc').val(),
+                            uso_cfdi: $('#edit_uso_cfdi').val(),
+                            regimen_fiscal: $('#edit_regimen_fiscal').val(),
+                            fact_calle: $('#edit_fact_calle').val(),
+                            fact_colonia: $('#edit_fact_colonia').val(),
+                            fact_municipio: $('#edit_fact_municipio').val(),
+                            fact_estado: $('#edit_fact_estado').val(),
+                            fact_cp: $('#edit_fact_cp').val(),
+                            fact_pais: $('#edit_fact_pais').val()
+                        };
+                    }
+                }).then(result => {
+                    if (!result.isConfirmed) return;
+
+                    $.post(ajaxurl, {
+                        action: 'ajax_actualizar_cliente',
+                        ...result.value
+                    }, function (r) {
+                        if (r.success) {
+                            Swal.fire('¡Actualizado!', 'Cliente editado con éxito', 'success');
+                            cargarClientes();
+                        } else {
+                            Swal.fire('Error', 'No se pudo guardar los cambios', 'error');
+                        }
                     });
+                });
+
                 });
             });
         });
@@ -181,6 +360,7 @@ jQuery(document).ready(function($) {
     $('#btnBuscarClientes').on('click', cargarClientes);
     cargarClientes();
     });
+
 </script>
 <style>
     input#edit_nombre {

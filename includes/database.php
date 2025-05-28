@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) {
 }
 
 global $wpdb;
-global $sql_catalogos, $sql_autopartes,$sql_ventas, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_cxc,$sql_pagos, $sql_cajas, $sql_movimientos_caja, $sql_apertura_caja,$sql_negociaciones,$sql_devoluciones;
+global $sql_catalogos, $sql_autopartes,$sql_ventas, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_cxc,$sql_pagos, $sql_cajas, $sql_movimientos_caja, $sql_apertura_caja,$sql_negociaciones,$sql_devoluciones,$sql_reparaciones,$sql_rembolsos;
 $charset_collate = $wpdb->get_charset_collate();
 
 // Tabla de Precios por Catálogo (RADEC, etc.)
@@ -81,13 +81,13 @@ $sql_ventas = "CREATE TABLE {$wpdb->prefix}ventas_autopartes (
     credito_usado DECIMAL(10,2) DEFAULT 0,
     oc_folio TEXT DEFAULT NULL,
     estado_pago ENUM('pagado', 'pendiente', 'vencido') DEFAULT 'pendiente',
+    estado VARCHAR(20) DEFAULT 'completada', -- ✅ estado de venta
     fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY idx_cliente_id (cliente_id),
     KEY idx_vendedor_id (vendedor_id),
     KEY idx_woo_order_id (woo_order_id)
 ) $charset_collate;";
-
 // Tabla de Solicitudes
 $sql_solicitudes = "CREATE TABLE {$wpdb->prefix}solicitudes_piezas (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -125,6 +125,8 @@ $sql_pagos = "CREATE TABLE {$wpdb->prefix}pagos_cxc (
     monto_pagado DECIMAL(10,2) NOT NULL,
     metodo_pago VARCHAR(50) DEFAULT 'efectivo',
     fecha_pago DATETIME DEFAULT CURRENT_TIMESTAMP,
+    tipo VARCHAR(50) DEFAULT 'manual',
+    registrado_por BIGINT DEFAULT NULL,
     notas TEXT DEFAULT NULL,
     comprobante_url TEXT DEFAULT NULL,
     PRIMARY KEY (id),
@@ -202,6 +204,7 @@ $sql_negociaciones = "CREATE TABLE {$wpdb->prefix}negociaciones_precios (
 $sql_devoluciones = "CREATE TABLE {$wpdb->prefix}devoluciones_autopartes (
     id BIGINT NOT NULL AUTO_INCREMENT,
     venta_id BIGINT NULL,
+    order_id BIGINT NULL,
     producto_id BIGINT NOT NULL,
     cliente_id BIGINT NOT NULL,
     motivo_cliente TEXT NOT NULL,
@@ -214,8 +217,43 @@ $sql_devoluciones = "CREATE TABLE {$wpdb->prefix}devoluciones_autopartes (
     fecha_revision DATETIME DEFAULT NULL,
     PRIMARY KEY (id),
     INDEX idx_venta (venta_id),
+    INDEX idx_order (order_id),
     INDEX idx_cliente (cliente_id),
     INDEX idx_estado (estado_revision)
+) $charset_collate;";
+
+$sql_reparaciones = "CREATE TABLE {$wpdb->prefix}reparaciones_autopartes (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    producto_id BIGINT NOT NULL,
+    devolucion_id BIGINT DEFAULT NULL,
+    estado ENUM('pendiente', 'reparado', 'descartado') DEFAULT 'pendiente',
+    notas TEXT DEFAULT NULL,
+    fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
+    fecha_reparado DATETIME DEFAULT NULL,
+    reparado_por BIGINT DEFAULT NULL,
+    PRIMARY KEY (id),
+    INDEX idx_producto (producto_id),
+    INDEX idx_estado_reparacion (estado)
+) $charset_collate;";
+
+$sql_rembolsos = "CREATE TABLE {$wpdb->prefix}solicitudes_rembolso (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    devolucion_id BIGINT NOT NULL,
+    venta_id BIGINT DEFAULT NULL,
+    order_id BIGINT DEFAULT NULL,
+    monto DECIMAL(10,2) DEFAULT 0,
+    metodo_pago VARCHAR(50) DEFAULT '',
+    tipo_cliente VARCHAR(50) DEFAULT '',
+    cliente_nombre VARCHAR(255) DEFAULT NULL, 
+    tipo_rembolso VARCHAR(50) DEFAULT NULL,
+    metodo_rembolso VARCHAR(50) DEFAULT NULL,
+    estado VARCHAR(50) DEFAULT 'pendiente',
+    motivo TEXT DEFAULT NULL,
+    fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+    fecha_resuelto DATETIME DEFAULT NULL,
+    PRIMARY KEY (id),
+    INDEX idx_devolucion (devolucion_id),
+    INDEX idx_estado_rembolso (estado)
 ) $charset_collate;";
 
 // Función para crear todas las tablas
@@ -223,7 +261,7 @@ function catalogo_autopartes_crear_tablas() {
     global $wpdb;
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
-    global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_ventas, $sql_cxc, $sql_pagos, $sql_cajas,$sql_movimientos_caja, $sql_apertura_caja, $sql_negociaciones,$sql_devoluciones;
+    global $sql_catalogos, $sql_autopartes, $sql_compatibilidades, $sql_ubicaciones, $sql_solicitudes, $sql_precios, $sql_ventas, $sql_cxc, $sql_pagos, $sql_cajas,$sql_movimientos_caja, $sql_apertura_caja, $sql_negociaciones,$sql_devoluciones,$sql_reparaciones,$sql_rembolsos;
 
     dbDelta($sql_catalogos);
     dbDelta($sql_autopartes);
@@ -239,6 +277,8 @@ function catalogo_autopartes_crear_tablas() {
     dbDelta($sql_apertura_caja);
     dbDelta($sql_negociaciones);
     dbDelta($sql_devoluciones);
+    dbDelta($sql_reparaciones);
+    dbDelta($sql_rembolsos);
 }
 
 // Función para eliminar las tablas cuando se desinstala el plugin
@@ -256,6 +296,9 @@ function catalogo_autopartes_eliminar_tablas() {
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "aperturas_caja");
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "negociaciones_precios");
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "devoluciones_autopartes");
+    $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "reparaciones_autopartes");
+    $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . "solicitudes_rembolso");
+    
 }
 
 // Función para buscar coincidencias en los catálogos
@@ -263,13 +306,13 @@ function buscar_coincidencias_autoparte($descripcion, $marca, $modelo, $anio) {
     global $wpdb;
 
     $query = "SELECT a.id, a.codigo, a.descripcion, a.precio, a.imagen_lista, c.nombre as catalogo 
-              FROM {$wpdb->prefix}autopartes a
-              INNER JOIN {$wpdb->prefix}compatibilidades cmp ON a.id = cmp.autoparte_id
-              INNER JOIN {$wpdb->prefix}catalogos_refaccionarias c ON a.catalogo_id = c.id
-              WHERE a.descripcion LIKE %s
-              AND cmp.marca = %s 
-              AND cmp.submarca = %s
-              AND cmp.rango LIKE %s";
+        FROM {$wpdb->prefix}autopartes a
+        INNER JOIN {$wpdb->prefix}compatibilidades cmp ON a.id = cmp.autoparte_id
+        INNER JOIN {$wpdb->prefix}catalogos_refaccionarias c ON a.catalogo_id = c.id
+        WHERE a.descripcion LIKE %s
+        AND cmp.marca = %s 
+        AND cmp.submarca = %s
+        AND cmp.rango LIKE %s";
 
     $resultados = $wpdb->get_results($wpdb->prepare(
         $query,

@@ -21,6 +21,25 @@ global $wpdb;
     <!-- Área del escáner -->
     <div id="scanner" class="hidden mb-6 border border-gray-300 rounded p-4 bg-white w-full max-w-sm"></div>
 
+    <div id="pendientesReubicacion" class="mt-8">
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">Productos pendientes de reintegración</h3>
+        <div class="overflow-x-auto bg-white shadow rounded mb-6">
+            <table class="min-w-full border text-sm">
+                <thead class="bg-gray-100 text-gray-700">
+                    <tr>
+                        <th class="px-4 py-2">Imagen</th>
+                        <th class="px-4 py-2">SKU</th>
+                        <th class="px-4 py-2">Producto</th>
+                        <th class="px-4 py-2">Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="tablaReubicacion">
+                    <tr><td colspan="4" class="text-center py-4 text-gray-500">Cargando productos...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <!-- Campo de entrada -->
     <input
         type="text"
@@ -169,6 +188,7 @@ document.getElementById('scanInput').addEventListener('change', function () {
                     document.getElementById('ubicacionActiva').classList.remove('hidden');
                     document.getElementById('productosAsignados').classList.remove('hidden');
                     document.getElementById('contenedorHistorialAsignados')?.classList.add('hidden');
+                    document.getElementById('pendientesReubicacion')?.classList.add('hidden');
                     productosEscaneados = [];
                     renderTabla();
                 } else {
@@ -327,7 +347,7 @@ document.getElementById('btnFinalizar').addEventListener('click', function () {
         document.getElementById('contenedorHistorialAsignados')?.classList.remove('hidden');
     });
 });
-// 🔄 Cargar ubicaciones en el select
+//  Cargar ubicaciones en el select
 function cargarUbicacionesEnFiltro() {
     fetch("<?= admin_url('admin-ajax.php') ?>?action=obtener_lista_ubicaciones")
         .then(res => res.json())
@@ -351,6 +371,145 @@ function cargarUbicacionesEnFiltro() {
             }
         });
 }
+
+function cargarPendientesReubicacion() {
+    fetch(ajaxurl + '?action=ajax_productos_pendientes_reubicacion')
+        .then(res => res.json())
+        .then(data => {
+            const tbody = document.getElementById('tablaReubicacion');
+            if (!data.success || data.data.productos.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500 py-4">No hay productos pendientes de reintegración.</td></tr>`;
+                return;
+            }
+
+            let html = '';
+            data.data.productos.forEach(prod => {
+                html += `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="px-4 py-2">
+                            <img src="${prod.imagen || ''}" width="60" class="rounded shadow-sm">
+                        </td>
+                        <td class="px-4 py-2">${prod.sku}</td>
+                        <td class="px-4 py-2">${prod.nombre}</td>
+                        <td class="px-4 py-2">
+                            <button class="px-3 py-1 text-xs bg-green-600 text-white rounded asignar-ubicacion-btn"
+                                    data-sku="${prod.sku}">
+                                Asignar ubicación
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = html;
+        });
+}
+
+// Ejecutar al cargar
+document.addEventListener('DOMContentLoaded', cargarPendientesReubicacion);
+document.addEventListener('click', function (e) {
+    if (e.target.classList.contains('asignar-ubicacion-btn')) {
+        e.preventDefault();
+
+        const sku = e.target.getAttribute('data-sku');
+        if (!sku) return;
+
+        skuAReintegrar = sku;
+
+        Swal.fire({
+            title: 'Escanea el QR del producto',
+            text: 'Escanea primero el código del producto para reintegrarlo.',
+            icon: 'info',
+            confirmButtonText: 'Iniciar escaneo'
+        }).then(() => {
+            iniciarEscaneoQR(validarProductoReintegrado);
+        });
+    }
+});
+function iniciarEscaneoQR(callback) {
+    const scannerDiv = document.getElementById('scanner');
+    scannerDiv.innerHTML = ''; // limpiar
+    scannerDiv.style.display = 'block';
+
+    const html5QrCode = new Html5Qrcode("scanner");
+    html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 250 },
+        (decodedText) => {
+            html5QrCode.stop().then(() => {
+                scannerDiv.style.display = 'none';
+                callback(decodedText);
+            });
+        },
+        (errorMsg) => {}
+    ).catch(err => {
+        alert("No se pudo iniciar la cámara: " + err);
+    });
+}
+function validarProductoReintegrado(textoQR) {
+    let skuEscaneado = textoQR;
+
+    // Extraer el sku si viene en formato de URL
+    try {
+        if (textoQR.includes('?sku=')) {
+            const url = new URL(textoQR);
+            const base = url.searchParams.get('sku');
+            const hash = url.hash?.replace('#', '');
+            skuEscaneado = hash ? `${base}#${hash}` : base;
+        }
+    } catch (e) {}
+
+    if (skuEscaneado !== skuAReintegrar) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Producto incorrecto',
+            text: `El SKU escaneado no coincide: ${skuEscaneado}`
+        });
+        return;
+    }
+
+    // Ahora pedir el QR de la ubicación
+    Swal.fire({
+        title: 'Producto validado',
+        text: 'Ahora escanea el QR de la ubicación donde será reintegrado.',
+        icon: 'success',
+        confirmButtonText: 'Escanear ubicación'
+    }).then(() => {
+        iniciarEscaneoQR((qrUbicacion) => asignarUbicacionFinal(skuEscaneado, qrUbicacion));
+    });
+}
+function asignarUbicacionFinal(sku, qrUbicacion) {
+    if (!qrUbicacion.startsWith('ubicacion#')) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Ubicación no válida',
+            text: 'El QR escaneado no corresponde a una ubicación.'
+        });
+        return;
+    }
+
+    const ubicacion = qrUbicacion.replace('ubicacion#', '');
+
+    fetch(ajaxurl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            action: 'asignar_lote_ubicacion',
+            ubicacion,
+            skus: JSON.stringify([sku])
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire('✅ Producto reintegrado', `Se asignó el SKU ${sku} a la ubicación correctamente.`, 'success');
+            cargarPendientesReubicacion(); // actualizar listado
+        } else {
+            Swal.fire('Error', data.message || 'No se pudo asignar ubicación.', 'error');
+        }
+    });
+}
+
 
 // 📦 Mostrar historial asignados
 function cargarHistorialAsignados(ubicacion = '') {

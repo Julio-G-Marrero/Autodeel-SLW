@@ -21,7 +21,13 @@ wp_enqueue_script('fontawesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-aw
     <!-- Izquierda: Cliente y Búsqueda -->
     <section class="md:w-2/3 bg-white rounded-lg shadow p-6 flex flex-col gap-6">
         <div>
-            <h2 class="text-xl font-semibold mb-3 border-b border-gray-300 pb-2">Buscador de cliente</h2>
+            <div class="flex justify-between justify-items-center mb-3 pb-2">
+                <h2 class="text-xl font-semibold">Buscador de cliente</h2>
+                <button type="button" id="abrirSelectorClientes" class="bg-blue-800 hover:bg-blue-900 text-white px-4 py-2 rounded text-sm">
+                    Listado Clientes
+                </button>
+            </div>
+
             <form id="customer-search-form" class="flex flex-col sm:flex-row gap-3 sm:items-center">
                 <input
                     type="text"
@@ -89,7 +95,7 @@ wp_enqueue_script('fontawesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-aw
             <!-- <div class="flex justify-between mb-4">
                 <span>Discount:</span>
                 <input type="number" id="discount" min="0" max="100" step="1" value="0"
-                       class="w-20 border border-gray-300 rounded px-2 py-1 text-right" />
+                    class="w-20 border border-gray-300 rounded px-2 py-1 text-right" />
                 <span class="ml-2 text-gray-600">%</span>
             </div> -->
             <div class="flex justify-between text-xl font-bold border-t border-gray-300 pt-2">
@@ -186,27 +192,54 @@ jQuery(document).ready(function($) {
         }
 
         const sku = match[1];
+        const clienteId = $('#clienteID').val(); // 🟩 Obtener cliente si está seleccionado
 
         $('#resultadoBusquedaProducto').html('<p class="text-blue-600">Buscando producto por QR...</p>');
-
         $.post(ajaxurl, {
             action: 'ajax_buscar_producto_avanzado',
-            termino: sku
+            termino: sku,
+            cliente_id: clienteId // 🟩 Enviar cliente_id al backend
         }, function (res) {
-            if (!res.success || res.data.length === 0) {
-                $('#resultadoBusquedaProducto').html('<p class="text-red-600">❌ No se encontraron productos.</p>');
+            if (!res.success || !res.data.length) {
+                $('#resultadoBusquedaProducto').html('<p class="text-red-600">❌ Producto no encontrado.</p>');
                 return;
             }
 
+            const formatoMXN = new Intl.NumberFormat('es-MX', {
+                style: 'currency',
+                currency: 'MXN'
+            });
+
             let html = '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">';
             res.data.forEach(p => {
+                const precioNumerico = parseFloat(p.precio || 0);
+                const precioBase = parseFloat(p.precio_base || 0);
+
+                const precioFormateado = formatoMXN.format(precioNumerico);
+                const precioBaseFormateado = formatoMXN.format(precioBase);
+
+                const mostrarPrecio = (precioBase > precioNumerico)
+                    ? `<p class="text-sm text-gray-500 line-through">${precioBaseFormateado}</p>
+                    <p class="text-sm text-green-600 font-bold">Precio Especial: ${precioFormateado}</p>`
+                    : `<p class="text-sm text-green-600 font-bold">${precioFormateado}</p>`;
+
                 html += `
                     <div class="border rounded p-4 shadow bg-white">
-                        <img src="${p.imagen}" class="w-full h-32 object-contain mb-2 popup-imagen cursor-pointer" />
+                        <img 
+                            src="${p.imagen}" 
+                            class="w-full h-32 object-contain mb-2 popup-imagen cursor-pointer" 
+                            data-galeria='${JSON.stringify(p.galeria || [])}' 
+                        />
                         <h4 class="text-sm font-bold">${p.nombre}</h4>
                         <p class="text-sm text-gray-600">${p.sku}</p>
-                        <p class="text-sm text-green-600 font-bold">$${p.precio}</p>
-                        <button data-sku="${p.sku}" data-nombre="${p.nombre}" data-precio="${p.precio}" data-solicitud-id="${p.solicitud_id}" class="mt-2 bg-blue-600 text-white px-3 py-1 rounded agregar-producto">
+                        ${mostrarPrecio}
+                        <button 
+                            data-sku="${p.sku}" 
+                            data-nombre="${p.nombre}" 
+                            data-precio="${precioNumerico}" 
+                            data-solicitud-id="${p.solicitud_id}" 
+                            data-ubicacion="${p.ubicacion || ''}"
+                            class="mt-2 bg-blue-600 text-white px-3 py-1 rounded agregar-producto">
                             Agregar
                         </button>
                     </div>
@@ -216,6 +249,7 @@ jQuery(document).ready(function($) {
             $('#resultadoBusquedaProducto').html(html);
         });
     });
+
 
     // Agregar función para actualizar tabla y total
     function actualizarTabla() {
@@ -237,7 +271,7 @@ jQuery(document).ready(function($) {
                     <td class="px-2 py-1 hidden">$${subtotal.toFixed(2)}</td>
                     <td class="px-2 py-1">
                         <button data-index="${index}" class="text-red-600 btn-eliminar">
-                            <svg class="w-4 h-4 text-red-600 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+                            <svg class="w-6 h-6 text-red-600 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
                             <path fill-rule="evenodd" d="M8.586 2.586A2 2 0 0 1 10 2h4a2 2 0 0 1 2 2v2h3a1 1 0 1 1 0 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8a1 1 0 0 1 0-2h3V4a2 2 0 0 1 .586-1.414ZM10 6h4V4h-4v2Zm1 4a1 1 0 1 0-2 0v8a1 1 0 1 0 2 0v-8Zm4 0a1 1 0 1 0-2 0v8a1 1 0 1 0 2 0v-8Z" clip-rule="evenodd"/>
                             </svg>
                         </button>
@@ -295,7 +329,7 @@ jQuery(document).ready(function($) {
         }
 
         $.post(ajaxurl, {
-            action: 'ajax_buscar_cliente',
+            action: 'ajax_buscar_clientes_pos',
             termino
         }, function (res) {
             if (!res.success || res.data.length === 0) {
@@ -356,6 +390,88 @@ jQuery(document).ready(function($) {
                 $('#clienteResultado').data('estado_credito', estado);
                 $('#clienteResultado').data('credito_disponible', credito);
                 $('#clienteResultado').data('oc_obligatoria', ocObligatoria);
+            }
+        });
+    });
+
+    $(document).on('click', '#abrirSelectorClientes', function () {
+        Swal.fire({
+            title: 'Buscar Cliente',
+            html: `
+                <input type="text" id="filtroClientePopup" class="swal2-input w-full m-0" placeholder="Filtrar por nombre o correo">
+                <div id="tablaClientesPopup" class="text-left text-sm max-h-64 overflow-y-auto mt-2"></div>
+            `,
+            width: 700,
+            showCancelButton: true,
+            showConfirmButton: false,
+            didOpen: () => {
+                cargarClientesPOS('');
+
+                $('#filtroClientePopup').on('input', function () {
+                    const termino = $(this).val().trim();
+                    cargarClientesPOS(termino);
+                });
+            }
+        });
+    });
+
+    function cargarClientesPOS(termino = '') {
+        $.post(ajaxurl, {
+            action: 'ajax_buscar_clientes_pos',
+            termino: termino
+        }, function (res) {
+            if (!res.success || res.data.length === 0) {
+                $('#tablaClientesPopup').html('<p class="text-gray-600 p-2">No se encontraron resultados.</p>');
+                return;
+            }
+
+            let html = `
+                <table class="w-full text-sm table-auto border border-gray-300">
+                    <thead><tr class="bg-gray-100">
+                        <th class="px-2 py-1">Nombre</th>
+                        <th class="px-2 py-1">Correo</th>
+                        <th class="px-2 py-1">Seleccionar</th>
+                    </tr></thead>
+                    <tbody>
+            `;
+
+            res.data.forEach(c => {
+                html += `
+                    <tr class="border-t">
+                        <td class="px-2 py-1">${c.nombre}</td>
+                        <td class="px-2 py-1">${c.correo}</td>
+                        <td class="px-2 py-1 text-center">
+                            <button class="seleccionarClientePOS bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs"
+                                data-id="${c.id}" data-nombre="${c.nombre}" data-correo="${c.correo}">
+                                Seleccionar
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            $('#tablaClientesPopup').html(html);
+        });
+    }
+
+    $(document).on('click', '.seleccionarClientePOS', function () {
+        const id = $(this).data('id');
+        const nombre = $(this).data('nombre');
+        const correo = $(this).data('correo');
+
+        $('#cliente').val(`${nombre} (${correo})`);
+        $('#clienteID').val(id);
+        $('#clienteResultado').html(`<span class="text-green-600">Cliente seleccionado: ${nombre}</span>`);
+        Swal.close();
+
+        // Obtener roles del cliente
+        $.post(ajaxurl, {
+            action: 'obtener_roles_cliente',
+            cliente_id: id
+        }, function (res) {
+            if (res.success) {
+                $('#clienteResultado').data('roles_cliente', res.data.roles);
             }
         });
     });
@@ -571,6 +687,16 @@ jQuery(document).ready(function($) {
         });
     }
 
+    async function subirOrdenCompra(archivo) {
+        const formData = new FormData();
+        formData.append('action', 'subir_orden_compra');
+        formData.append('archivo', archivo);
+
+        const res = await fetch(ajaxurl, { method: 'POST', body: formData });
+        const json = await res.json();
+        if (!json.success) throw new Error(json.data?.message || 'Error al subir OC');
+        return json.data.url;
+    }
 
     function registrarVenta(data) {
         $.post(ajaxurl, {
@@ -632,29 +758,47 @@ jQuery(document).ready(function($) {
         }
     });
 
-    function generarTicketVentaHTML({ cliente, productos, total, metodo, folio }) {
-        const fecha = new Date().toLocaleString();
+    function generarTicketVentaHTML({ cliente, productos, total, metodo, folio, vendedor, fecha_hora }) {
         const filas = productos.map(p => `
             <tr>
-                <td>${p.nombre}</td>
+                <td>${p.nombre}<br><small>SKU: ${p.sku}</small></td>
+                <td>${p.ubicacion ? `<small>${p.ubicacion}</small>` : '-'}</td>
                 <td style="text-align:right;">$${p.precio.toFixed(2)}</td>
             </tr>
         `).join('');
 
         return `
             <div id="ticketVentaContenido" style="font-family:monospace;">
-                <h2 style="text-align:center;">🧾 Ticket de Venta</h2>
-                <p><strong>Folio:</strong> #${folio}</p>
-                <p><strong>Fecha:</strong> ${fecha}</p>
+                <div style="text-align:center;margin-bottom:10px;">
+                    <img src="https://dev-autodeel-slw.pantheonsite.io/wp-content/uploads/2025/05/LOGOSINFONDO-3-1.png" alt="Logo" style="max-width:150px;height:auto;margin-bottom:5px;">
+                    <h2 style="margin: 0;">Ticket de Venta</h2>
+                    <p style="font-size: 13px; color: #555;">Gracias por su compra. Todas nuestras autopartes son inspeccionadas y garantizadas.<br>Para devoluciones conserve este ticket y contáctenos dentro de los primeros 7 días.</p>
+                </div>
+
+                <p><strong>Folio Venta:</strong> #${folio}</p>
+                <p><strong>Fecha:</strong> ${fecha_hora}</p>
+                <p><strong>Vendedor:</strong> ${vendedor}</p>
                 <p><strong>Cliente:</strong> ${cliente}</p>
-                <p><strong>Método:</strong> ${metodo}</p>
+                <p><strong>Método de pago:</strong> ${metodo}</p>
                 <hr/>
-                <table style="width:100%;">${filas}</table>
+                <table style="width:100%; font-size: 14px;">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th>Ubicación</th>
+                            <th style="text-align:right;">Precio</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filas}
+                    </tbody>
+                </table>
                 <hr/>
-                <p class="total">Total: $${total.toFixed(2)}</p>
+                <p class="total" style="text-align:right; font-size: 16px; font-weight: bold;">Total: $${total.toFixed(2)}</p>
+
                 <div style="text-align:center;margin-top:1em;">
-                    <button id="btnImprimirTicketVenta" class="bg-black text-white px-4 py-2 rounded text-sm">
-                        🖨️ Imprimir
+                    <button id="btnImprimirTicketVenta" class="no-print bg-black text-white px-4 py-2 rounded text-sm">
+                        Imprimir
                     </button>
                 </div>
             </div>
@@ -709,91 +853,9 @@ jQuery(document).ready(function($) {
         });
     }
 
-    $(document).on('click', '#btnConfirmarVenta', function () {
-        const clienteID = $('#clienteID').val();
-        const metodoPago = $('#resumenMetodo').text().trim();
-        const tipoCliente = $('#resumenTipoCliente').data('tipo');
-        const canalVenta = $('#resumenCanal').text().trim();
-        const creditoUsado = parseFloat($('#resumenCredito').data('valor') || 0);
-        const solicitudID = $('#resumenSolicitud').data('id') || 0;
-
-        const productos = productosSeleccionados.map(p => ({
-            sku: p.sku,
-            nombre: p.nombre,
-            precio: p.precio,
-            cantidad: p.cantidad
-        }));
-        const solicitudes_ids = productosSeleccionados
-            .filter(p => p.solicitud_id)
-            .map(p => parseInt(p.solicitud_id));
-
-        const ocObligatoria = $('#resumenOC').data('obligatoria');
-        const fileInput = document.getElementById('archivoOrdenCompra');
-        const archivoOC = fileInput && fileInput.files.length > 0 ? fileInput.files[0] : null;
-
-
-
-        const formData = new FormData();
-        formData.append('solicitudes_ids', JSON.stringify(solicitudes_ids));
-        formData.append('action', 'ajax_registrar_venta_autopartes');
-        formData.append('cliente_id', clienteID);
-        formData.append('metodo_pago', metodoPago);
-        formData.append('tipo_cliente', tipoCliente);
-        formData.append('canal', canalVenta);
-        formData.append('credito_usado', creditoUsado);
-        formData.append('productos', JSON.stringify(productos));
-        formData.append('solicitud_id', solicitudID);
-
-        if (ocObligatoria === 'si' && archivoOC) {
-            formData.append('orden_compra', archivoOC);
-            formData.append('oc_obligatoria', 'si');
-        } else {
-            formData.append('oc_obligatoria', 'no');
-        }
-
-        Swal.fire({
-            title: 'Procesando...',
-            text: 'Registrando la venta y descontando inventario...',
-            allowOutsideClick: false,
-            didOpen: () => Swal.showLoading()
-        });
-
-        fetch(ajaxurl, {
-            method: 'POST',
-            body: formData
-        })
-        .then(res => res.json())
-        .then(res => {
-            if (res.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Venta registrada',
-                    text: 'La venta ha sido registrada correctamente.',
-                    timer: 2500,
-                    showConfirmButton: false
-                });
-
-                // Limpieza visual
-                productosSeleccionados = [];
-                actualizarTabla();
-                $('#cliente').val('');
-                $('#clienteID').val('');
-                $('#resultadoBusquedaProducto').html('');
-                $('#contenedorBusquedaDinamica').html('');
-                $('#modoBusquedaProducto').val('');
-            } else {
-                Swal.fire('Error', res.data?.message || 'No se pudo registrar la venta.', 'error');
-            }
-        })
-        .catch(err => {
-            console.error(err);
-            Swal.fire('Error', 'Error inesperado al registrar la venta.', 'error');
-        });
-    });
-
-
     $(document).on('input', '#inputSKU', function () {
         const termino = $(this).val().trim();
+        const clienteID = $('#clienteID').val() || 0;
 
         if (termino.length < 2) {
             $('#resultadoBusquedaProducto').html('');
@@ -804,26 +866,49 @@ jQuery(document).ready(function($) {
 
         $.post(ajaxurl, {
             action: 'ajax_buscar_producto_avanzado',
-            termino
+            termino: termino,
+            cliente_id: clienteID
         }, function (res) {
             if (!res.success || !res.data.length) {
-                Swal.fire('Sin resultados', 'No se encontraron productos con ese criterio.', 'warning');
+                $('#resultadoBusquedaProducto').html('<p class="text-red-600">❌ No se encontraron productos con ese criterio.</p>');
                 return;
             }
 
+            const formatoMXN = new Intl.NumberFormat('es-MX', {
+                style: 'currency',
+                currency: 'MXN'
+            });
+
             let html = '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">';
             res.data.forEach(p => {
+                const precioNumerico = parseFloat(p.precio || 0);
+                const precioBase = parseFloat(p.precio_base || 0);
+
+                const precioFormateado = formatoMXN.format(precioNumerico);
+                const precioBaseFormateado = formatoMXN.format(precioBase);
+
+                const mostrarPrecio = (precioBase > precioNumerico)
+                    ? `<p class="text-sm text-gray-500 line-through">${precioBaseFormateado}</p>
+                    <p class="text-sm text-green-600 font-bold">Precio Especial: ${precioFormateado}</p>`
+                    : `<p class="text-sm text-green-600 font-bold">${precioFormateado}</p>`;
+
                 html += `
                     <div class="border rounded p-4 shadow bg-white">
-                        <img src="${p.imagen}" class="w-full h-32 object-contain mb-2 popup-imagen cursor-pointer" />
+                        <img 
+                            src="${p.imagen}" 
+                            class="w-full h-32 object-contain mb-2 popup-imagen cursor-pointer" 
+                            data-galeria='${JSON.stringify(p.galeria || [])}' 
+                        />
                         <h4 class="text-sm font-bold">${p.nombre}</h4>
                         <p class="text-sm text-gray-600">${p.sku}</p>
-                        <p class="text-sm text-green-600 font-bold">$${p.precio}</p>
+                        ${p.ubicacion ? `<p class="text-sm text-blue-700">📍 ${p.ubicacion}</p>` : ''}
+                        ${mostrarPrecio}
                         <button 
                             data-sku="${p.sku}" 
                             data-nombre="${p.nombre}" 
-                            data-precio="${p.precio}" 
-                            data-solicitud_id="${p.solicitud_id || ''}" 
+                            data-precio="${precioNumerico}" 
+                            data-solicitud-id="${p.solicitud_id || ''}" 
+                            data-ubicacion="${p.ubicacion || ''}"
                             class="mt-2 bg-blue-600 text-white px-3 py-1 rounded agregar-producto">
                             Agregar
                         </button>
@@ -831,10 +916,11 @@ jQuery(document).ready(function($) {
                 `;
             });
             html += '</div>';
-
             $('#resultadoBusquedaProducto').html(html);
         });
     });
+
+
 
     $(document).on('click', '#btnValidarVenta', function () {
         const clienteID = $('#clienteID').val();
@@ -892,6 +978,13 @@ jQuery(document).ready(function($) {
                                 ${metodoSelectHTML}
                             </div>
 
+                            <div>
+                            <label class="inline-flex items-center mt-2 text-sm">
+                                <input type="checkbox" id="entregaInmediata" class="form-checkbox h-4 w-4 text-blue-600 transition duration-150 ease-in-out">
+                                <span class="ml-2">¿Entrega inmediata?</span>
+                            </label>
+                            </div>
+
                             ${tieneCredito ? `
                                 <div class="bg-blue-50 border border-blue-300 text-blue-700 p-2 rounded">
                                     <strong>Crédito disponible:</strong> $${creditoDisponible.toFixed(2)}
@@ -926,79 +1019,150 @@ jQuery(document).ready(function($) {
                         }).trigger('change');
                     },
                     preConfirm: () => {
-                        const metodo = $('#metodoPagoSelect').val();
-                        const archivoOC = $('#archivoOC')[0]?.files?.[0];
+                        return (async () => {
+                            const metodo = $('#metodoPagoSelect').val();
+                            const archivoOC = $('#archivoOC')[0]?.files?.[0];
+                            const entregaInmediata = $('#entregaInmediata').is(':checked');
 
-                        // Validación de crédito
-                        if (metodo === 'credito') {
-                            if (requiereOC && !archivoOC) {
-                                Swal.showValidationMessage('Debes subir la orden de compra obligatoria.');
-                                return false;
+                            // Validación de crédito
+                            if (metodo === 'credito') {
+                                if (requiereOC && !archivoOC) {
+                                    Swal.showValidationMessage('Debes subir la orden de compra obligatoria.');
+                                    return false;
+                                }
+
+                                if (total > creditoDisponible) {
+                                    Swal.showValidationMessage(`El total de la venta excede el crédito disponible. Disponible: $${creditoDisponible.toFixed(2)}`);
+                                    return false;
+                                }
                             }
 
-                            if (total > creditoDisponible) {
-                                Swal.showValidationMessage(`El total de la venta excede el crédito disponible. Disponible: $${creditoDisponible.toFixed(2)}`);
-                                return false;
+                            let oc_url = '';
+                            if (archivoOC) {
+                                try {
+                                    oc_url = await subirOrdenCompra(archivoOC);
+                                } catch (err) {
+                                    Swal.showValidationMessage(err.message || 'Error al subir la orden de compra.');
+                                    return false;
+                                }
                             }
-                        }
 
-                        const formData = new FormData();
-                        formData.append('action', 'ajax_registrar_venta_autopartes');
-                        formData.append('cliente_id', clienteID);
-                        formData.append('metodo_pago', metodo);
-                        formData.append('productos', JSON.stringify(productosSeleccionados));
-                        formData.append('oc_obligatoria', requiereOC && metodo === 'credito' ? '1' : '0');
+                            const formData = new FormData();
+                            formData.append('fecha_hora', new Date().toLocaleString('es-MX'));
+                            formData.append('caja_id', resCaja.data?.caja_id || '');
+                            formData.append('caja_folio', resCaja.data?.folio || '');
+                            formData.append('action', 'ajax_registrar_venta_autopartes');
+                            formData.append('entrega_inmediata', entregaInmediata ? '1' : '0');
+                            formData.append('cliente_id', clienteID);
+                            formData.append('metodo_pago', metodo);
+                            formData.append('productos', JSON.stringify(productosSeleccionados));
+                            formData.append('oc_obligatoria', requiereOC && metodo === 'credito' ? '1' : '0');
+                            formData.append('oc_url', oc_url); // ✅ OC como URL
 
-                        if (archivoOC) {
-                            formData.append('orden_compra', archivoOC);
-                            console.log(archivoOC)
-                        }else {
-                            console.log(archivoOC)
-                        }
+                            const solicitudes = productosSeleccionados
+                                .filter(p => p.solicitud_id)
+                                .map(p => p.solicitud_id);
+                            formData.append('solicitudes_ids', JSON.stringify(solicitudes));
 
-                        const solicitudes = productosSeleccionados
-                            .filter(p => p.solicitud_id)
-                            .map(p => p.solicitud_id);
-                        formData.append('solicitudes_ids', JSON.stringify(solicitudes));
-
-                        return fetch(ajaxurl, {
-                            method: 'POST',
-                            body: formData
-                        })
-                        .then(res => res.json())
-                        .catch(() => {
-                            Swal.showValidationMessage('Error al registrar venta.');
-                        });
+                            return fetch(ajaxurl, {
+                                method: 'POST',
+                                body: formData
+                            })
+                            .then(res => res.json())
+                            .then(data => {
+                                if (!data.success) {
+                                    Swal.showValidationMessage(data.data?.message || 'No se pudo registrar la venta.');
+                                    return false;
+                                }
+                                return data;
+                            })
+                            .catch(() => {
+                                Swal.showValidationMessage('Error al registrar venta.');
+                                return false;
+                            });
+                        })();
                     }
                 }).then(result => {
                     if (result.isConfirmed && result.value?.success) {
                         const metodo = $('#metodoPagoSelect').val();
                         const cliente = $('#cliente').val();
                         const total = parseFloat($('#total').text().replace('$', ''));
-
                         const ticketHTML = generarTicketVentaHTML({
                             cliente,
-                            productos: productosSeleccionados,
+                            productos: result.value.data.productos,
                             total,
                             metodo,
-                            folio: result.value.data.venta_id
+                            folio: result.value.data.venta_id,
+                            vendedor: result.value.data.vendedor,
+                            fecha_hora: result.value.data.fecha_hora
                         });
-
                         Swal.fire({
-                            title: '🎟️ Ticket de Venta',
-                            html: ticketHTML,
+                            title: '',
+                            html: ticketHTML, // ← ya contiene el logo y mensaje profesional
                             showConfirmButton: false,
                             width: 600,
                             didOpen: () => {
                                 document.getElementById('btnImprimirTicketVenta').addEventListener('click', () => {
                                     const contenido = document.getElementById('ticketVentaContenido').innerHTML;
                                     const ventana = window.open('', '', 'width=400,height=600');
-                                    ventana.document.write(`<html><head><title>Ticket</title><style>
-                                        body{font-family:monospace;padding:10px;}
-                                        table{width:100%;border-collapse:collapse;}
-                                        td{padding:4px;text-align:left;}
-                                        .total{font-weight:bold;font-size:1.1em;text-align:right;}
-                                    </style></head><body>${contenido}</body></html>`);
+                                    ventana.document.write(`
+                                        <html>
+                                            <head>
+                                                <title>Ticket de Venta</title>
+                                                <style>
+                                                    body {
+                                                        font-family: monospace;
+                                                        padding: 10px;
+                                                        font-size: 13px;
+                                                        color: #333;
+                                                    }
+                                                    img {
+                                                        max-width: 150px;
+                                                        display: block;
+                                                        margin: 0 auto 5px;
+                                                    }
+                                                    h2 {
+                                                        text-align: center;
+                                                        margin-bottom: 5px;
+                                                    }
+                                                    p {
+                                                        margin: 2px 0;
+                                                    }
+                                                    table {
+                                                        width: 100%;
+                                                        border-collapse: collapse;
+                                                        margin-top: 10px;
+                                                    }
+                                                    th, td {
+                                                        padding: 4px;
+                                                        border-bottom: 1px dashed #ccc;
+                                                        text-align: left;
+                                                    }
+                                                    th {
+                                                        font-weight: bold;
+                                                        background-color: #f8f8f8;
+                                                    }
+                                                    .total {
+                                                        font-weight: bold;
+                                                        font-size: 1.1em;
+                                                        text-align: right;
+                                                        margin-top: 10px;
+                                                    }
+                                                    .agradecimiento {
+                                                        text-align: center;
+                                                        font-style: italic;
+                                                        margin-top: 15px;
+                                                        font-size: 12px;
+                                                        color: #666;
+                                                    }
+                                                </style>
+                                            </head>
+                                            <body>
+                                                ${contenido}
+                                                <p class="agradecimiento">Gracias por su compra. Conserve este ticket para futuras referencias.</p>
+                                            </body>
+                                        </html>
+                                    `);
                                     ventana.document.close();
                                     ventana.print();
                                 });
@@ -1034,40 +1198,75 @@ jQuery(document).ready(function($) {
 
         const compatibilidad = `${marca} ${submarca} ${anio}`.toUpperCase();
 
-        if (!marca || !submarca || !anio) {
-            $('#resultadoBusquedaProducto').html('<p class="text-red-600">Todos los campos son obligatorios.</p>');
+        if (!marca && !submarca && !anio) {
+            $('#resultadoBusquedaProducto').html('<p class="text-red-600">Ingresa al menos un filtro para buscar.</p>');
             return;
         }
 
         $('#resultadoBusquedaProducto').html('<p class="text-blue-600">🔎 Buscando productos compatibles...</p>');
+        const clienteId = $('#clienteID').val(); // asegúrate que esté seteado
 
         $.post(ajaxurl, {
             action: 'ajax_buscar_productos_compatibles',
-            compatibilidad,
-            categoria
+            marca,
+            submarca,
+            anio,
+            categoria,
+            cliente_id: clienteId 
         }, function (res) {
-            if (!res.success || res.data.length === 0) {
+            const resultados = res.data?.resultados || [];
+
+            if (!res.success || resultados.length === 0) {
                 $('#resultadoBusquedaProducto').html('<p class="text-red-600">❌ No se encontraron productos.</p>');
                 return;
             }
 
+            const formatoMXN = new Intl.NumberFormat('es-MX', {
+                style: 'currency',
+                currency: 'MXN'
+            });
+
             let html = '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">';
-            res.data.forEach(p => {
+            resultados.forEach(p => {
+                const precioNumerico = parseFloat(p.precio || 0);
+                const precioBase = parseFloat(p.precio_base || 0);
+
+                const precioFormateado = formatoMXN.format(precioNumerico);
+                const precioBaseFormateado = formatoMXN.format(precioBase);
+
+                const mostrarPrecio = (precioBase > precioNumerico)
+                    ? `<p class="text-sm text-gray-500 line-through">${precioBaseFormateado}</p>
+                    <p class="text-sm text-green-600 font-bold">Precio Especial: ${precioFormateado}</p>`
+                    : `<p class="text-sm text-green-600 font-bold">${precioFormateado}</p>`;
+
                 html += `
                     <div class="border rounded p-4 shadow bg-white">
-                        <img src="${p.imagen}" class="w-full h-32 object-contain mb-2 popup-imagen cursor-pointer" />
+                        <img 
+                            src="${p.imagen}" 
+                            class="w-full h-32 object-contain mb-2 popup-imagen cursor-pointer" 
+                            data-galeria='${JSON.stringify(p.galeria || [])}' 
+                        />
                         <h4 class="text-sm font-bold">${p.nombre}</h4>
-                        <p class="text-sm text-gray-600">${p.sku}</p>
-                        <p class="text-sm text-green-600 font-bold">$${p.precio}</p>
-                        <button data-sku="${p.sku}" data-nombre="${p.nombre}" data-precio="${p.precio}" class="mt-2 bg-blue-600 text-white px-3 py-1 rounded agregar-producto">
+                        <p class="text-sm text-gray-600">${p.sku || ''}</p>
+                        ${p.ubicacion ? `<p class="text-sm text-blue-700">📍 ${p.ubicacion}</p>` : ''}
+                        ${mostrarPrecio}
+                        <button 
+                            data-sku="${p.sku}" 
+                            data-nombre="${p.nombre}" 
+                            data-precio="${precioNumerico}" 
+                            data-solicitud-id="${p.solicitud_id || ''}" 
+                            data-ubicacion="${p.ubicacion || ''}"
+                            class="mt-2 bg-blue-600 text-white px-3 py-1 rounded agregar-producto">
                             Agregar
                         </button>
                     </div>
                 `;
             });
             html += '</div>';
+
             $('#resultadoBusquedaProducto').html(html);
         });
+
     });
 
     $(document).on('click', '.agregar-producto', function () {
@@ -1075,6 +1274,7 @@ jQuery(document).ready(function($) {
         const nombre = $(this).data('nombre');
         const precio = parseFloat($(this).data('precio'));
         const solicitud_id = $(this).data('solicitud_id') || null;
+        const ubicacion = $(this).data('ubicacion') || ''; // 🟩 extraer ubicación desde el botón
 
         // Verifica si ya está agregado
         const yaExiste = productosSeleccionados.find(p => p.sku === sku);
@@ -1088,10 +1288,12 @@ jQuery(document).ready(function($) {
             nombre,
             precio,
             cantidad: 1,
-            solicitud_id
+            solicitud_id,
+            ubicacion // ✅ se guarda en el producto
         });
 
         actualizarTabla();
+
         Swal.fire({
             icon: 'success',
             title: 'Producto agregado',
@@ -1103,25 +1305,45 @@ jQuery(document).ready(function($) {
         });
 
         $('#resultadoBusquedaProducto').html('');
-        $('#inputSKU').val(''); 
+        $('#inputSKU').val('');
     });
 
     $(document).on('click', '.popup-imagen', function () {
-        const src = $(this).attr('src');
+        const principal = $(this).attr('src');
+        const galeria = JSON.parse($(this).attr('data-galeria') || '[]');
+        const imagenes = [principal, ...galeria];
+
+        let swiperSlides = imagenes.map(src => `
+            <div class="swiper-slide">
+                <img src="${src}" class="w-full h-auto object-contain mx-auto max-h-[400px] border-none" />
+            </div>
+        `).join('');
+
         Swal.fire({
-            imageUrl: src,
-            imageAlt: 'Imagen del producto',
-            showConfirmButton: false,
-            background: 'transparent', // el fondo del popup
-            backdrop: `
-                rgba(0, 0, 0, 0.8)
-                center left
-                no-repeat
+            title: 'Imágenes del producto',
+            html: `
+                <div class="swiper-container">
+                    <div class="swiper-wrapper">
+                        ${swiperSlides}
+                    </div>
+                    <div class="swiper-pagination"></div>
+                    <div class="swiper-button-next"></div>
+                    <div class="swiper-button-prev"></div>
+                </div>
             `,
-            width: 'auto',
-            padding: 0,
-            customClass: {
-                popup: 'rounded-lg overflow-hidden shadow-lg'
+            width: 800,
+            showConfirmButton: false,
+            willOpen: () => {
+                new Swiper('.swiper-container', {
+                    loop: true,
+                    navigation: {
+                        nextEl: '.swiper-button-next',
+                        prevEl: '.swiper-button-prev'
+                    },
+                    pagination: {
+                        el: '.swiper-pagination'
+                    }
+                });
             }
         });
     });
@@ -1188,6 +1410,23 @@ jQuery(document).ready(function($) {
                     Swal.fire('❌ Error', res.data || 'No se pudo enviar la solicitud.', 'error');
                 }
             });
+        });
+    });
+
+    $(document).on('click', '#clear-cart-btn', function () {
+        Swal.fire({
+            title: '¿Estás seguro?',
+            text: 'Esto eliminará todos los productos del carrito.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, limpiar',
+            cancelButtonText: 'Cancelar'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                productosSeleccionados = [];
+                actualizarTabla();
+                Swal.fire('Limpiado', 'El carrito ha sido vaciado.', 'success');
+            }
         });
     });
 
@@ -1282,8 +1521,20 @@ jQuery(document).ready(function($) {
     .swal2-popup.swal2-modal.rounded-lg.overflow-hidden.swal2-show {
         width: auto !important;
     }
+    svg.svg-inline--fa.fa-handshake.fa-w-20 {
+        width: 24px;
+        height: 24px;
+    }
     @media print {
         button#btnImprimirTicketVenta {
+            display: none !important;
+        }
+    }
+    .no-print {
+        display: inline-block;
+    }
+    @media print {
+        .no-print {
             display: none !important;
         }
     }

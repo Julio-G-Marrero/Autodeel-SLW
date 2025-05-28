@@ -53,6 +53,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 </div>
 
 <script>
+const rolActual = "<?php echo esc_js(wp_get_current_user()->roles[0] ?? ''); ?>";
 jQuery(document).ready(function($) {
     let paginaVenta = 1;
 
@@ -74,7 +75,46 @@ jQuery(document).ready(function($) {
                 $tabla.html('<tr><td colspan="6" class="text-center py-4">No hay ventas registradas</td></tr>');
             } else {
                 let html = '';
+                const puedeGestionar = ['administrator', 'cobranza'].includes(rolActual);
+
                 res.data.ventas.forEach(v => {
+                    console.log('Venta:', v);
+
+                    let estadoTexto = '';
+                    let acciones = '';
+
+                    switch (v.estado) {
+                        case 'en_revision':
+                            estadoTexto = '<span class="text-yellow-600 font-semibold">En revisión</span>';
+                            acciones = `<span class="text-yellow-700 text-xs italic">Proceso de devolución</span>`;
+                            break;
+
+                        case 'cancelada':
+                            estadoTexto = '<span class="text-red-600 font-semibold">Cancelada</span>';
+                            acciones = `<span class="text-red-700 text-xs italic">Venta cancelada</span>`;
+                            break;
+
+                        case 'completada':
+                        case null:
+                        case '':
+                        case undefined:
+                            estadoTexto = '<span class="text-green-600 font-semibold"></span>';
+                            acciones = `<button data-id="${v.id}" class="bg-blue-600 text-white text-xs px-3 py-1 rounded ver-ticket">Ver Ticket</button>`;
+                            
+                            if (puedeGestionar) {
+                                acciones += `
+                                    <button data-id="${v.id}" data-cliente-id="${v.cliente_id}" class="solicitar-devolucion bg-yellow-500 text-white text-xs px-3 py-1 rounded ml-1">Devolución</button>
+                                    <button data-id="${v.id}" class="bg-red-600 text-white text-xs px-3 py-1 rounded cancelar-venta ml-1">Cancelar</button>
+                                `;
+                            }
+                            break;
+
+                        default:
+                            estadoTexto = '<span class="text-gray-600 font-semibold">Activa</span>';
+                            acciones = `<button data-id="${v.id}" class="bg-blue-600 text-white text-xs px-3 py-1 rounded ver-ticket">🧾 Ver Ticket</button>`;
+                            break;
+                    }
+
                     html += `
                         <tr class="border-b">
                             <td class="px-4 py-2 font-semibold">#${v.id}</td>
@@ -82,30 +122,91 @@ jQuery(document).ready(function($) {
                             <td class="px-4 py-2">$${v.total}</td>
                             <td class="px-4 py-2">${v.metodo}</td>
                             <td class="px-4 py-2">${v.fecha}</td>
-                            <td class="px-4 py-2">
-                                <button data-id="${v.id}" class="bg-blue-600 text-white text-xs px-3 py-1 rounded ver-ticket">
-                                    🧾 Ver Ticket
-                                </button>
+                            <td class="px-4 py-2 space-y-1">
+                                ${estadoTexto}
+                                <div class="mt-1">${acciones}</div>
                             </td>
                         </tr>`;
                 });
+
                 $tabla.html(html);
                 $('#paginaActualVenta').text(paginaVenta);
             }
 
-            // ✅ Reactivar botón
             $btn.prop('disabled', false).text('Buscar');
         }).fail(function() {
             Swal.fire('Error', 'Hubo un problema al cargar las ventas.', 'error');
             $btn.prop('disabled', false).text('Buscar');
         });
+
     }
+
 
     $(document).on('click', '.ver-ticket', function() {
         const ventaId = $(this).data('id');
         Swal.fire('', 'Aquí podrías cargar el detalle de la venta #'+ventaId, 'info');
         // Puedes usar un fetch/$.post aquí para obtener y mostrar el ticket en un popup
     });
+
+    // Cancelar venta
+    $(document).on('click', '.cancelar-venta', function () {
+        const ventaId = $(this).data('id');
+
+        Swal.fire({
+            title: '¿Cancelar esta venta?',
+            text: 'Esto eliminará el ingreso, restaurará el stock y marcará esta venta como cancelada.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, cancelar',
+            cancelButtonText: 'No, conservar'
+        }).then(res => {
+            if (!res.isConfirmed) return;
+
+            $.post(ajaxurl, {
+                action: 'ajax_cancelar_venta_pos',
+                venta_id: ventaId
+            }, function (r) {
+                if (r.success) {
+                    Swal.fire('Cancelada', r.data.message || 'La venta fue cancelada correctamente.', 'success');
+                    cargarVentas();
+                } else {
+                    Swal.fire('Error', r.data.message || 'No se pudo cancelar la venta.', 'error');
+                }
+            });
+        });
+    });
+
+    // Solicitar devolución
+    $(document).on('click', '.solicitar-devolucion', function () {
+        const ventaId = $(this).data('id');
+        const clienteId = $(this).data('cliente-id');
+
+        Swal.fire({
+            title: '¿Solicitar devolución?',
+            text: 'Esto enviará los productos al proceso de inspección.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Solicitar',
+            cancelButtonText: 'Cancelar'
+        }).then(res => {
+            if (!res.isConfirmed) return;
+
+            $.post(ajaxurl, {
+                action: 'ajax_solicitar_devolucion_pos',
+                venta_id: ventaId,
+                cliente_id: clienteId,
+            }, function (r) {
+                if (r.success) {
+                    Swal.fire('Registrado', r.data.message || 'Solicitud de devolución creada.', 'success');
+                    cargarVentas();
+                } else {
+                    Swal.fire('Error', r.data.message || 'No se pudo registrar la devolución.', 'error');
+                }
+            });
+        });
+    });
+
+
 
     $(document).on('click', '.ver-ticket', function () {
         const ventaId = $(this).data('id');

@@ -60,46 +60,44 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
   let paginaActual = 1;
   const pedidosPorPagina = 10;
 
-  function cargarPedidosArmado() {
-    const estado = filtroEstado; // 🔥
-    const cliente = $('#filtroCliente').val();
+ function cargarPedidosArmado() {
+      const estado = filtroEstado;
+      const cliente = $('#filtroCliente').val();
 
-    $('#tablaArmado').html('<tr><td colspan="6" class="text-center py-4 text-gray-500">Cargando...</td></tr>');
+      $('#tablaArmado').html('<tr><td colspan="6" class="text-center py-4 text-gray-500">Cargando...</td></tr>');
 
-    $.post(ajaxurl, {
-        action: 'ajax_obtener_pedidos_armado',
-        estado: estado,
-        cliente: cliente,
-        pagina: paginaActual,
-        por_pagina: pedidosPorPagina
-    }, function(res) {
-        if (!res.success || res.data.pedidos.length === 0) {
-        $('#tablaArmado').html('<tr><td colspan="6" class="text-center py-4 text-gray-500">No hay pedidos encontrados.</td></tr>');
-        $('#paginacionArmado').empty();
-        return;
-        }
+      $.post(ajaxurl, {
+          action: 'ajax_obtener_pedidos_armado',
+          estado: estado,
+          cliente: cliente,
+          pagina: paginaActual,
+          por_pagina: pedidosPorPagina
+      }, function(res) {
+          if (!res.success || res.data.pedidos.length === 0) {
+            $('#tablaArmado').html('<tr><td colspan="6" class="text-center py-4 text-gray-500">No hay pedidos encontrados.</td></tr>');
+            $('#paginacionArmado').empty();
+            return;
+          }
 
-        let html = '';
-        res.data.pedidos.forEach(p => {
-        const accionBtn = generarBotonAccion(p.id, p.estado_armado);
+          let html = '';
+          res.data.pedidos.forEach(p => {
+            const accionBtn = generarBotonAccion(p);
 
-        html += `
-            <tr class="hover:bg-gray-50">
-            <td class="px-4 py-2 font-semibold">#${p.id}</td>
-            <td class="px-4 py-2">${p.cliente || 'Sin nombre'}</td>
-            <td class="px-4 py-2 text-green-600 font-bold">$${parseFloat(p.total.replace(',', '')).toFixed(2)}</td>
-            <td class="px-4 py-2 capitalize">${badgeEstado(p.estado_armado)}</td>
-            <td class="px-4 py-2">${p.fecha}</td>
-            <td class="px-4 py-2 text-center">${accionBtn}</td>
-            </tr>`;
-        });
+            html += `
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-2 font-semibold">#${p.id}</td>
+                <td class="px-4 py-2">${p.cliente || 'Sin nombre'}</td>
+                <td class="px-4 py-2 text-green-600 font-bold">$${parseFloat(p.total.replace(',', '')).toFixed(2)}</td>
+                <td class="px-4 py-2 capitalize">${badgeEstado(p.estado_armado)}</td>
+                <td class="px-4 py-2">${p.fecha}</td>
+                <td class="px-4 py-2 text-center">${accionBtn}</td>
+              </tr>`;
+          });
 
-        $('#tablaArmado').html(html);
-        generarPaginacion(res.data.total_paginas);
-    });
+          $('#tablaArmado').html(html);
+          generarPaginacion(res.data.total_paginas);
+      });
     }
-
-
 
   function badgeEstado(estado) {
     let clases = 'px-2 py-1 rounded-full text-xs font-semibold ';
@@ -115,17 +113,23 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
   }
 
   function formatearEstado(estado) {
-    switch (estado) {
-      case 'pendiente_armado': return 'Pendiente';
-      case 'en_armado': return 'En Armado';
-      case 'listo_para_envio': return 'Listo para Envío';
-      case 'enviado': return 'Enviado';
-      case 'entregado': return 'Entregado';
-      default: return estado;
+      switch (estado) {
+        case 'pendiente_armado': return 'Pendiente';
+        case 'en_armado': return 'En Armado';
+        case 'listo_para_envio': return 'Listo para Envío';
+        case 'enviado': return 'Enviado';
+        case 'entregado': return 'Entregado';
+        default: return estado;
+      }
     }
-  }
 
-  function generarBotonAccion(pedidoId, estadoArmado) {
+  function generarBotonAccion(pedido) {
+    const pedidoId = pedido.id;
+    const estadoArmado = pedido.estado_armado;
+    const requiereOC = pedido.oc_obligatoria;
+    const yaTieneOC = !!pedido.oc_url;
+    const palabraClave = pedido.codigo_recepcion || '';
+
     let label = '', nuevoEstado = '', redirect = false;
 
     switch (estadoArmado) {
@@ -152,9 +156,17 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
     if (redirect) {
       return `<a href="?page=armado-pedido&pedido_id=${pedidoId}" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs">Iniciar Armado</a>`;
     } else {
-      return `<button class="btnActualizarEstado bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs" data-id="${pedidoId}" data-estado="${nuevoEstado}">${label}</button>`;
+      return `<button class="btnActualizarEstado bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs"
+        data-id="${pedidoId}"
+        data-estado="${nuevoEstado}"
+        data-clave="${palabraClave}"
+        data-requiere-oc="${requiereOC}"
+        data-tiene-oc="${yaTieneOC}">
+        ${label}
+      </button>`;
     }
   }
+
 
   function generarPaginacion(totalPaginas) {
         if (totalPaginas <= 1) {
@@ -190,52 +202,57 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
   $(document).on('click', '.btnActualizarEstado', function() {
     const pedidoId = $(this).data('id');
     const nuevoEstado = $(this).data('estado');
-    if (nuevoEstado === 'entregado') {
-      $.post(ajaxurl, {
-        action: 'obtener_datos_pedido',
-        pedido_id: pedidoId
-      }, function (res) {
-        if (!res.success) {
-          Swal.fire('❌ Error', res.data.message, 'error');
-          return;
-        }
+    const claveRecepcion = $(this).data('clave');
 
-        const metodo = res.data.metodo;
-        if (metodo === 'credito_cliente') {
-          Swal.fire({
-            icon: 'info',
-            title: 'Recepción por parte del cliente requerida',
-            html: 'Este pedido es a crédito. El cliente debe <b>subir su Orden de Compra</b> desde su cuenta para que el pedido se marque como <b>entregado</b> automáticamente.',
-          });
-        } else {
-          Swal.fire({
-            title: '¿Confirmar entrega?',
-            text: '¿Deseas marcar este pedido como entregado?',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Sí, entregar'
-          }).then(result => {
-            if (result.isConfirmed) {
-              actualizarEstadoArmado(pedidoId, 'entregado');
-            }
-          });
-        }
-      });
-    } else {
+    if (nuevoEstado === 'enviado') {
+      const requiereOC = $(this).data('requiere-oc');
+      const yaTieneOC = $(this).data('tiene-oc');
+
+      if (requiereOC && !yaTieneOC) {
+        Swal.fire('❌ Orden de Compra Requerida', 'Este pedido requiere que el cliente suba su orden de compra antes de enviarlo.', 'warning');
+        return;
+      }
+    }
+
+    if (nuevoEstado === 'entregado') {
       Swal.fire({
-        title: '¿Confirmar cambio?',
-        text: `¿Deseas cambiar a "${formatearEstado(nuevoEstado)}"?`,
-        icon: 'question',
+        title: 'Confirmar entrega',
+        html: `Ingresa la palabra clave de entrega:<br><input type="text" id="inputClave" class="swal2-input" placeholder="Código...">`,
         showCancelButton: true,
-        confirmButtonText: 'Sí, actualizar',
-        cancelButtonText: 'Cancelar'
-      }).then((result) => {
+        confirmButtonText: 'Validar',
+        preConfirm: () => {
+          const input = document.getElementById('inputClave').value.trim();
+          if (!input || input !== claveRecepcion) {
+            Swal.showValidationMessage('Palabra clave incorrecta.');
+            return false;
+          }
+          return true;
+        }
+      }).then(result => {
         if (result.isConfirmed) {
           actualizarEstadoArmado(pedidoId, nuevoEstado);
         }
       });
+      return;
     }
+
+    confirmarYActualizarEstado(pedidoId, nuevoEstado);
   });
+
+  function confirmarYActualizarEstado(pedidoId, nuevoEstado) {
+    Swal.fire({
+      title: '¿Confirmar cambio?',
+      text: `¿Deseas cambiar a "${nuevoEstado}"?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, actualizar',
+      cancelButtonText: 'Cancelar'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        actualizarEstadoArmado(pedidoId, nuevoEstado);
+      }
+    });
+  }
 
   function actualizarEstadoArmado(pedidoId, nuevoEstado) {
     $.post(ajaxurl, {

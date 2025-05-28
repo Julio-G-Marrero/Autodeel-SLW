@@ -13,7 +13,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
     <!-- Filtros -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <input type="text" id="filtroClienteDev" placeholder="Buscar cliente..." class="border px-3 py-2 rounded w-full">
-        <select id="filtroEstadoDev" class="border px-3 py-2 rounded w-full">
+        <select id="filtroEstadoDev" class="border px-3 py-2 rounded w-full hidden">
             <option value="">Todos los estados</option>
             <option value="pendiente">Pendiente</option>
             <option value="en_revision">En revisión</option>
@@ -22,11 +22,18 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
         </select>
         <input type="date" id="filtroDesdeDev" class="border px-3 py-2 rounded w-full">
         <input type="date" id="filtroHastaDev" class="border px-3 py-2 rounded w-full">
+        <button id="btnBuscarDevoluciones" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition mb-4">
+            Buscar
+        </button>
     </div>
 
-    <button id="btnBuscarDevoluciones" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition mb-4">
-        Buscar
-    </button>
+    <div id="tabsEstados" class="flex flex-wrap gap-2 mb-6">
+        <button data-estado="" class="tab-estado px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300 active">Todos</button>
+        <button data-estado="pendiente" class="tab-estado px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300">Pendiente</button>
+        <button data-estado="en_revision" class="tab-estado px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300">En Revisión</button>
+        <button data-estado="resuelto" class="tab-estado px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300">Resuelto</button>
+        <button data-estado="rechazado" class="tab-estado px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300">Rechazado</button>
+    </div>
 
     <!-- Tabla de devoluciones -->
     <div class="overflow-x-auto bg-white shadow rounded">
@@ -53,6 +60,16 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
     // Este script se agrega al final del archivo de gestión de devoluciones
 jQuery(document).ready(function($) {
     // Ya existe cargarDevoluciones arriba
+    let estadoSeleccionado = '';
+
+    $('.tab-estado').on('click', function () {
+        $('.tab-estado').removeClass('bg-blue-600 text-white').addClass('bg-gray-200 text-gray-700');
+        $(this).removeClass('bg-gray-200 text-gray-700').addClass('bg-blue-600 text-white');
+
+        estadoSeleccionado = $(this).data('estado');
+        $('#filtroEstadoDev').val(estadoSeleccionado); // sincroniza con el filtro oculto o funcional
+        cargarDevoluciones();
+    });
 
     // Revisar solicitud
     $(document).on('click', '.ver-devolucion', function () {
@@ -81,6 +98,14 @@ jQuery(document).ready(function($) {
 
             const d = res.data;
             const evidencias = d.evidencias.map(url => `<a href="${url}" target="_blank" class="text-blue-600 underline block text-sm">Ver archivo</a>`).join('') || '<em>Sin archivos</em>';
+            if (d.estado === 'resuelto' || d.estado === 'rechazado') {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Devolución ya procesada',
+                    text: 'Esta devolución ya ha sido resuelta y no puede modificarse.'
+                });
+                return;
+            }
 
             Swal.fire({
                 title: `Revisión Devolución #${d.id}`,
@@ -142,7 +167,12 @@ jQuery(document).ready(function($) {
                     notas: result.value.notas
                 }, function (res2) {
                     if (res2.success) {
-                        Swal.fire('✅ Resolución guardada', '', 'success').then(cargarDevoluciones);
+                        Swal.fire('✅ Resolución guardada', '', 'success')
+                        .then(() => {
+                            const fila = $(`button.ver-devolucion[data-id="${devolucionId}"]`).closest('tr');
+                            fila.find('td:nth-child(5)').text('resuelto'); // columna de estado
+                            fila.find('td:nth-child(7)').html('<em class="text-gray-500 text-xs">Ya revisado</em>');
+                        });
                     } else {
                         Swal.fire('Error', res2.data?.message || 'No se pudo guardar.', 'error');
                     }
@@ -152,45 +182,45 @@ jQuery(document).ready(function($) {
         });
     });
 });
-jQuery(document).ready(function($) {
-    function cargarDevoluciones() {
-        const cliente = $('#filtroClienteDev').val();
-        const estado = $('#filtroEstadoDev').val();
-        const desde = $('#filtroDesdeDev').val();
-        const hasta = $('#filtroHastaDev').val();
+function cargarDevoluciones() {
+    const cliente = jQuery('#filtroClienteDev').val();
+    const estado = jQuery('#filtroEstadoDev').val();
+    const desde = jQuery('#filtroDesdeDev').val();
+    const hasta = jQuery('#filtroHastaDev').val();
 
-        $.post(ajaxurl, {
-            action: 'ajax_obtener_devoluciones_admin',
-            cliente, estado, desde, hasta
-        }, function(res) {
-            const $tabla = $('#tablaDevoluciones');
-            if (!res.success || res.data.devoluciones.length === 0) {
-                $tabla.html('<tr><td colspan="7" class="text-center py-4">No hay devoluciones registradas.</td></tr>');
-                return;
-            }
+    jQuery.post(ajaxurl, {
+        action: 'ajax_obtener_devoluciones_admin',
+        cliente, estado, desde, hasta
+    }, function(res) {
+        const $tabla = jQuery('#tablaDevoluciones');
+        if (!res.success || res.data.devoluciones.length === 0) {
+            $tabla.html('<tr><td colspan="7" class="text-center py-4">No hay devoluciones registradas.</td></tr>');
+            return;
+        }
 
-            let html = '';
-            res.data.devoluciones.forEach(dev => {
-                html += `
-                    <tr class="border-b hover:bg-gray-50">
-                        <td class="px-4 py-2 font-semibold">#${dev.id}</td>
-                        <td class="px-4 py-2">${dev.cliente || 'Sin nombre'}</td>
-                        <td class="px-4 py-2">${dev.producto}</td>
-                        <td class="px-4 py-2">${dev.motivo}</td>
-                        <td class="px-4 py-2 capitalize">${dev.estado}</td>
-                        <td class="px-4 py-2">${dev.fecha}</td>
-                        <td class="px-4 py-2 text-center">
-                            <button class="bg-blue-600 text-white text-xs px-3 py-1 rounded ver-devolucion" data-id="${dev.id}">
+        let html = '';
+        res.data.devoluciones.forEach(dev => {
+            html += `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="px-4 py-2 font-semibold">#${dev.id}</td>
+                    <td class="px-4 py-2">${dev.cliente || 'Sin nombre'}</td>
+                    <td class="px-4 py-2">${dev.producto}</td>
+                    <td class="px-4 py-2">${dev.motivo}</td>
+                    <td class="px-4 py-2 capitalize">${dev.estado}</td>
+                    <td class="px-4 py-2">${dev.fecha}</td>
+                    <td class="px-4 py-2 text-center">
+                        ${dev.estado === 'resuelto' || dev.estado === 'rechazado' 
+                            ? '<em class="text-gray-500 text-xs">Ya revisado</em>' 
+                            : `<button class="bg-blue-600 text-white text-xs px-3 py-1 rounded ver-devolucion" data-id="${dev.id}">
                                 Revisar
-                            </button>
-                        </td>
-                    </tr>`;
-            });
-            $tabla.html(html);
+                            </button>`}
+                    </td>
+                </tr>`;
         });
-
-    }
-
+        $tabla.html(html);
+    });
+}
+jQuery(document).ready(function($) {
     $('#btnBuscarDevoluciones').on('click', cargarDevoluciones);
     cargarDevoluciones();
 });

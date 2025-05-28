@@ -64,7 +64,7 @@ asort($perfiles_wholesale);
                 <label class="block text-sm font-medium mb-1">Estado del Crédito</label>
                 <select name="estado_credito" class="w-full border rounded px-3 py-2">
                     <option value="activo">Activo</option>
-                    <option value="suspendido">Suspendido</option>
+                    <option value="suspendido" selected>Suspendido</option>
                 </select>
             </div>
             <div>
@@ -187,6 +187,44 @@ asort($perfiles_wholesale);
 </div>
 
 <script>
+const rolActual = "<?php echo esc_js(wp_get_current_user()->roles[0] ?? ''); ?>";
+
+document.addEventListener('DOMContentLoaded', function () {
+    if (rolActual !== 'administrator' && rolActual !== 'cobranza') {
+        // Desactivar checkboxes
+        const checkCredito = document.getElementById('checkCredito');
+        const checkFacturacion = document.getElementById('checkFacturacion');
+
+        checkCredito.disabled = true;
+        checkFacturacion.disabled = true;
+
+        // Agregar estilo al texto
+        checkCredito.closest('label').classList.add('text-disabled');
+        checkFacturacion.closest('label').classList.add('text-disabled');
+
+        // Ocultar campos si estaban visibles
+        document.getElementById('camposCredito')?.classList?.add('hidden');
+        document.getElementById('camposFacturacion')?.classList?.add('hidden');
+    }
+    const camposAvanzados = [
+        document.getElementById('checkCredito'),
+        document.getElementById('camposCredito'),
+        document.querySelector('select[name="canal"]').closest('div'),
+        document.querySelector('select[name="wholesale_role"]').closest('div'),
+        document.getElementById('checkFacturacion'),
+        document.getElementById('camposFacturacion')
+    ];
+
+    if (rolActual !== 'administrator' && rolActual !== 'cobranza') {
+        camposAvanzados.forEach(el => el?.classList?.add('hidden'));
+
+        // Desactivar campos para evitar que se envíen
+        document.querySelectorAll('#camposCredito input, #camposCredito select, #camposFacturacion input, #camposFacturacion select').forEach(el => {
+            el.disabled = true;
+        });
+    }
+});
+
 document.getElementById('tipoCliente').addEventListener('change', function () {
     const campoSucursal = document.getElementById('campoSucursal');
     campoSucursal.classList.toggle('hidden', this.value !== 'interno');
@@ -255,6 +293,9 @@ document.getElementById('checkFacturacion').addEventListener('change', function 
     width: 100% !important;
     margin: 0.5rem 0;
     text-align: left !important;
+}
+.text-disabled {
+    color: #c0c0c0;
 }
 
 /* Opcional: reducir tamaño si deseas mostrar más datos */

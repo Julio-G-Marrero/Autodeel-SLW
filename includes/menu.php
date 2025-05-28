@@ -217,16 +217,35 @@ function catalogo_autopartes_menu() {
         }
     );
     add_submenu_page(
-    'catalogo-autopartes',
-    'Gestión de Devoluciones',       
-    'Devoluciones',                  
-    'manage_options',               
-    'gestion-devoluciones',         
-    function () {
-        include plugin_dir_path(__FILE__) . '../pages/gestion-devoluciones.php';
-    }
-);
-
+        'catalogo-autopartes',
+        'Gestión de Devoluciones',       
+        'Devoluciones',                  
+        'gestion_devoluciiones',               
+        'gestion-devoluciones',         
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/gestion-devoluciones.php';
+        }
+    );
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Gestión de Reparaciones',       
+        'Reparaciones',                   
+        'gestion_reparaciones',                
+        'gestion-reparaciones',        
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/gestion-reparaciones.php';
+        }
+    );
+    add_submenu_page(
+        'catalogo-autopartes',
+        'Gestión de Rembolsos',       
+        'Rembolsos',                   
+        'gestion_rembolsos',                
+        'gestion-rembolsos',        
+        function () {
+            include plugin_dir_path(__FILE__) . '../pages/gestion-rembolsos.php';
+        }
+    );
 }
 
 add_action('admin_menu', 'catalogo_autopartes_menu');
