@@ -1307,17 +1307,20 @@ add_action('wp_ajax_ajax_obtener_ticket_venta', function () {
     }
 
     $user = get_userdata($venta->cliente_id);
-    $cliente = $user ? $user->display_name : 'Cliente eliminado';
+    $vendedor = get_userdata($venta->vendedor_id);
     $productos = json_decode($venta->productos, true);
 
     wp_send_json_success([
-        'cliente'  => $cliente,
-        'productos' => $productos,
-        'total'    => floatval($venta->total),
-        'metodo'   => $venta->metodo_pago,
-        'folio'    => $venta->id
+        'cliente'     => $user ? $user->display_name : 'Cliente eliminado',
+        'vendedor'    => $vendedor ? $vendedor->display_name : '—',
+        'productos'   => $productos,
+        'total'       => floatval($venta->total),
+        'metodo'      => $venta->metodo_pago,
+        'folio'       => $venta->id,
+        'fecha_hora'  => date('d/m/Y H:i:s', strtotime($venta->fecha)) // ← Aquí llega correctamente
     ]);
 });
+
 
 add_action('wp_ajax_ajax_obtener_resumen_cortes', function () {
     global $wpdb;

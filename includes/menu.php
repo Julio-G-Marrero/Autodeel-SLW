@@ -220,7 +220,7 @@ function catalogo_autopartes_menu() {
         'catalogo-autopartes',
         'Gestión de Devoluciones',       
         'Devoluciones',                  
-        'gestion_devoluciiones',               
+        'gestion_devoluciones',               
         'gestion-devoluciones',         
         function () {
             include plugin_dir_path(__FILE__) . '../pages/gestion-devoluciones.php';

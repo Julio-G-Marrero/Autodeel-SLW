@@ -226,7 +226,7 @@ jQuery(document).ready(function($) {
                 return;
             }
 
-            const ticketHTML = generarTicketVentaHTML(res.data);
+            const ticketHTML = generarTicketVentaHTML(res.data); // ← Aquí ya debe incluir vendedor y fecha_hora
             Swal.fire({
                 title: '🎟️ Ticket de Venta',
                 html: ticketHTML,
@@ -242,7 +242,7 @@ jQuery(document).ready(function($) {
                             td{padding:4px;text-align:left;}
                             .total{font-weight:bold;font-size:1.1em;text-align:right;}
                             @media print {
-                                #btnImprimirTicketVenta { display: none; }
+                                .no-print { display: none; }
                             }
                         </style></head><body>${contenido}</body></html>`);
                         ventana.document.close();
@@ -251,36 +251,56 @@ jQuery(document).ready(function($) {
                 }
             });
         });
+
     });
 
-    function generarTicketVentaHTML({ cliente, productos, total, metodo, folio }) {
-        const fecha = new Date().toLocaleString();
+    function generarTicketVentaHTML({ cliente, productos, total, metodo, folio, vendedor, fecha_hora }) {
         const filas = productos.map(p => `
             <tr>
-                <td>${p.nombre}</td>
+                <td>${p.nombre}<br><small>SKU: ${p.sku}</small></td>
+                <td>${p.ubicacion ? `<small>${p.ubicacion}</small>` : '-'}</td>
                 <td style="text-align:right;">$${p.precio.toFixed(2)}</td>
             </tr>
         `).join('');
 
         return `
             <div id="ticketVentaContenido" style="font-family:monospace;">
-                <h2 style="text-align:center;">🧾 Ticket de Venta</h2>
-                <p><strong>Folio:</strong> #${folio}</p>
-                <p><strong>Fecha:</strong> ${fecha}</p>
+                <div style="text-align:center;margin-bottom:10px;">
+                    <img src="https://dev-autodeel-slw.pantheonsite.io/wp-content/uploads/2025/05/LOGOSINFONDO-3-1.png" alt="Logo" style="max-width:150px;height:auto;margin-bottom:5px;">
+                    <h2 style="margin: 0;">Ticket de Venta</h2>
+                    <p style="font-size: 13px; color: #555;">Gracias por su compra. Todas nuestras autopartes son inspeccionadas y garantizadas.<br>Para devoluciones conserve este ticket y contáctenos dentro de los primeros 7 días.</p>
+                </div>
+
+                <p><strong>Folio Venta:</strong> #${folio}</p>
+                <p><strong>Fecha:</strong> ${fecha_hora}</p>
+                <p><strong>Vendedor:</strong> ${vendedor}</p>
                 <p><strong>Cliente:</strong> ${cliente}</p>
-                <p><strong>Método:</strong> ${metodo}</p>
+                <p><strong>Método de pago:</strong> ${metodo}</p>
                 <hr/>
-                <table style="width:100%;">${filas}</table>
+                <table style="width:100%; font-size: 14px;">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th>Ubicación</th>
+                            <th style="text-align:right;">Precio</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filas}
+                    </tbody>
+                </table>
                 <hr/>
-                <p class="total">Total: $${total.toFixed(2)}</p>
+                <p class="total" style="text-align:right; font-size: 16px; font-weight: bold;">Total: $${total.toFixed(2)}</p>
+
                 <div style="text-align:center;margin-top:1em;">
-                    <button id="btnImprimirTicketVenta" class="bg-black text-white px-4 py-2 rounded text-sm">
-                        🖨️ Imprimir
+                    <button id="btnImprimirTicketVenta" class="no-print bg-black text-white px-4 py-2 rounded text-sm">
+                        Imprimir
                     </button>
                 </div>
             </div>
         `;
     }
+
 
     $('#btnBuscarVentas').on('click', function () {
         paginaVenta = 1;
