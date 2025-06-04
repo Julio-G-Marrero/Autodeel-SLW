@@ -579,7 +579,8 @@ jQuery(document).ready(function($) {
         const requiereOC = clienteInfo.oc_obligatoria === '1';
         const tieneCredito = clienteInfo.estado_credito === 'activo';
 
-        const metodosDisponibles = ['efectivo', 'tarjeta', 'transferencia'];
+        // const metodosDisponibles = ['efectivo', 'tarjeta', 'transferencia'];
+        const metodosDisponibles = [ 'tarjeta', 'transferencia'];
         if (tieneCredito) {
             metodosDisponibles.push('credito');
         }
@@ -954,7 +955,8 @@ jQuery(document).ready(function($) {
                 const tieneCredito = clienteInfo.estado_credito === 'activo';
                 const creditoDisponible = parseFloat(clienteInfo.credito_disponible || 0);
 
-                const metodosPago = ['efectivo', 'tarjeta', 'transferencia'];
+                // const metodosPago = ['efectivo', 'tarjeta', 'transferencia'];
+                const metodosPago = [ 'tarjeta', 'transferencia'];
                 if (tieneCredito) metodosPago.push('credito');
 
                 const metodoSelectHTML = `
@@ -1049,7 +1051,11 @@ jQuery(document).ready(function($) {
 
                             const formData = new FormData();
                             formData.append('fecha_hora', new Date().toLocaleString('es-MX'));
-                            formData.append('caja_id', resCaja.data?.caja_id || '');
+                            if (!resCaja.data?.caja_id) {
+                                Swal.showValidationMessage('No se pudo obtener la caja abierta. Intenta recargar la página.');
+                                return false;
+                            }
+                            formData.append('caja_id', resCaja.data.caja_id);
                             formData.append('caja_folio', resCaja.data?.folio || '');
                             formData.append('action', 'ajax_registrar_venta_autopartes');
                             formData.append('entrega_inmediata', entregaInmediata ? '1' : '0');
@@ -1233,7 +1239,7 @@ jQuery(document).ready(function($) {
 
                 const precioFormateado = formatoMXN.format(precioNumerico);
                 const precioBaseFormateado = formatoMXN.format(precioBase);
-
+                const imagenPreview = (p.images && p.images.length > 0) ? p.images[0] : 'https://via.placeholder.com/150';
                 const mostrarPrecio = (precioBase > precioNumerico)
                     ? `<p class="text-sm text-gray-500 line-through">${precioBaseFormateado}</p>
                     <p class="text-sm text-green-600 font-bold">Precio Especial: ${precioFormateado}</p>`
@@ -1242,9 +1248,9 @@ jQuery(document).ready(function($) {
                 html += `
                     <div class="border rounded p-4 shadow bg-white">
                         <img 
-                            src="${p.imagen}" 
+                            src="${imagenPreview}" 
                             class="w-full h-32 object-contain mb-2 popup-imagen cursor-pointer" 
-                            data-galeria='${JSON.stringify(p.galeria || [])}' 
+                            data-galeria='${JSON.stringify(p.images || [])}' 
                         />
                         <h4 class="text-sm font-bold">${p.nombre}</h4>
                         <p class="text-sm text-gray-600">${p.sku || ''}</p>
@@ -1311,9 +1317,12 @@ jQuery(document).ready(function($) {
     $(document).on('click', '.popup-imagen', function () {
         const principal = $(this).attr('src');
         const galeria = JSON.parse($(this).attr('data-galeria') || '[]');
-        const imagenes = [principal, ...galeria];
 
-        let swiperSlides = imagenes.map(src => `
+        // Eliminar duplicado de la imagen principal
+        const galeriaSinPrincipal = galeria.filter(src => src !== principal);
+        const imagenes = [principal, ...galeriaSinPrincipal];
+
+        const swiperSlides = imagenes.map(src => `
             <div class="swiper-slide">
                 <img src="${src}" class="w-full h-auto object-contain mx-auto max-h-[400px] border-none" />
             </div>

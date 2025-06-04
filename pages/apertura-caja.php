@@ -180,8 +180,8 @@ jQuery(document).ready(function ($) {
             title: 'Caja abierta correctamente',
             html: html,
             width: 600,
-            showConfirmButton: true,
-            confirmButtonText: 'Ir al Punto de Venta',
+            showConfirmButton: true, // Puedes cambiarlo a false si no quieres botón
+            confirmButtonText: 'Cerrar',
             didOpen: () => {
                 document.getElementById('btnImprimirTicketApertura').addEventListener('click', () => {
                     const contenido = document.getElementById('ticketAperturaContenido').innerHTML;
@@ -195,10 +195,6 @@ jQuery(document).ready(function ($) {
                     ventana.document.close();
                     ventana.print();
                 });
-            }
-        }).then(result => {
-            if (result.isConfirmed) {
-                window.location.href = 'admin.php?page=ventas-autopartes';
             }
         });
     }

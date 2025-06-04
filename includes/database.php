@@ -81,7 +81,7 @@ $sql_ventas = "CREATE TABLE {$wpdb->prefix}ventas_autopartes (
     credito_usado DECIMAL(10,2) DEFAULT 0,
     oc_folio TEXT DEFAULT NULL,
     estado_pago ENUM('pagado', 'pendiente', 'vencido') DEFAULT 'pendiente',
-    estado VARCHAR(20) DEFAULT 'completada', -- ✅ estado de venta
+    estado VARCHAR(20) DEFAULT 'completada',
     fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY idx_cliente_id (cliente_id),
@@ -122,6 +122,7 @@ $sql_cxc = "CREATE TABLE {$wpdb->prefix}cuentas_cobrar (
 $sql_pagos = "CREATE TABLE {$wpdb->prefix}pagos_cxc (
     id BIGINT NOT NULL AUTO_INCREMENT,
     cuenta_id BIGINT NOT NULL,
+    caja_id BIGINT DEFAULT NULL,
     monto_pagado DECIMAL(10,2) NOT NULL,
     metodo_pago VARCHAR(50) DEFAULT 'efectivo',
     fecha_pago DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -130,7 +131,8 @@ $sql_pagos = "CREATE TABLE {$wpdb->prefix}pagos_cxc (
     notas TEXT DEFAULT NULL,
     comprobante_url TEXT DEFAULT NULL,
     PRIMARY KEY (id),
-    KEY idx_cuenta_id (cuenta_id)
+    KEY idx_cuenta_id (cuenta_id),
+    KEY idx_caja_id (caja_id)
 ) $charset_collate;";
 
 $sql_cajas = "CREATE TABLE {$wpdb->prefix}cajas (
@@ -150,10 +152,12 @@ $sql_movimientos_caja = "CREATE TABLE {$wpdb->prefix}movimientos_caja (
     id BIGINT NOT NULL AUTO_INCREMENT,
     caja_id BIGINT NOT NULL,
     tipo ENUM('venta', 'pago', 'otro') DEFAULT 'venta',
-    referencia_id BIGINT DEFAULT NULL, 
+    referencia_id BIGINT DEFAULT NULL,
     metodo_pago VARCHAR(50) NOT NULL,
     monto DECIMAL(10,2) NOT NULL,
     descripcion TEXT DEFAULT NULL,
+    referencia TEXT DEFAULT NULL,
+    usuario_id BIGINT DEFAULT NULL, 
     fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY caja_idx (caja_id)

@@ -27,7 +27,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 
     <div class="overflow-x-auto bg-white shadow rounded">
         <table class="min-w-full text-sm text-left">
-            <thead class="bg-gray-100 text-gray-700">
+            <!-- <thead class="bg-gray-100 text-gray-700">
                 <tr>
                     <th class="px-4 py-2">Folio</th>
                     <th class="px-4 py-2">Usuario</th>
@@ -38,7 +38,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
                     <th class="px-4 py-2">V°B°</th>
                     <th class="px-4 py-2">Acciones</th>
                 </tr>
-            </thead>
+            </thead> -->
             <tbody id="tablaCortesCaja">
                 <tr><td colspan="7" class="text-center py-4">Cargando cortes...</td></tr>
             </tbody>
@@ -63,33 +63,36 @@ jQuery(document).ready(function($) {
             const $tabla = $('#tablaCortesCaja');
 
             if (!res.success || !res.data || !Array.isArray(res.data.cortes) || res.data.cortes.length === 0) {
-                $tabla.html('<tr><td colspan="7" class="text-center py-4">No se encontraron cortes.</td></tr>');
+                $tabla.html('<tr><td colspan="10" class="text-center py-4">No se encontraron cortes.</td></tr>');
             } else {
                 let html = '';
-                    res.data.cortes.forEach(corte => {
-                        const estadoColor = corte.estado === 'abierta' ? 'text-yellow-600' : 'text-green-600';
-                        const voboLabel = corte.vobo_aprobado === '1'
-                            ? `<span class="text-green-600 font-semibold">✔ Autorizado</span>
-                            <button data-id="${corte.id}" class="btn-revertir-vobo text-xs text-red-600 hover:underline ml-2">Revertir</button>`
-                            : `<button data-id="${corte.id}" class="btn-vobo text-blue-600 hover:underline text-xs">Autorizar</button>`;
+                res.data.cortes.forEach(corte => {
+                    const estadoColor = corte.estado === 'abierta' ? 'text-yellow-600' : 'text-green-600';
+                    const diferenciaColor = corte.diferencia < 0 ? 'text-red-600' : 'text-green-600';
+                    const voboLabel = corte.vobo_aprobado === 1
+                        ? `<span class="text-green-600 font-semibold">✔ Autorizado</span>
+                        <button data-id="${corte.id}" class="btn-revertir-vobo text-xs text-red-600 hover:underline ml-2">Revertir</button>`
+                        : `<button data-id="${corte.id}" class="btn-vobo text-blue-600 hover:underline text-xs">Autorizar</button>`;
 
-                        html += `
-                            <tr class="border-b hover:bg-gray-50">
-                                <td class="px-4 py-2 font-mono">#${corte.id}</td>
-                                <td class="px-4 py-2">${corte.usuario}</td>
-                                <td class="px-4 py-2">${corte.fecha_apertura}</td>
-                                <td class="px-4 py-2">${corte.fecha_cierre || '-'}</td>
-                                <td class="px-4 py-2 text-green-600">$${corte.total_cierre}</td>
-                                <td class="px-4 py-2 ${estadoColor} capitalize">${corte.estado}</td>
-                                <td class="px-4 py-2">${voboLabel}</td>
-                                <td class="px-4 py-2">
-                                    <button data-id="${corte.id}" class="btn-ver-ticket-corte text-blue-600 hover:underline text-xs">
-                                        Ver Ticket
-                                    </button>
-                                </td>
-                            </tr>
-                        `;
-                    });
+                    html += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="px-4 py-2 font-mono">#${corte.id}</td>
+                            <td class="px-4 py-2">${corte.usuario}</td>
+                            <td class="px-4 py-2">${corte.fecha_apertura}</td>
+                            <td class="px-4 py-2">${corte.fecha_cierre || '-'}</td>
+                            <td class="px-4 py-2 text-gray-800">$${parseFloat(corte.total_teorico).toFixed(2)}</td>
+                            <td class="px-4 py-2 text-blue-700 font-semibold">$${parseFloat(corte.total_cierre).toFixed(2)}</td>
+                            <td class="px-4 py-2 ${diferenciaColor} font-semibold">$${parseFloat(corte.diferencia).toFixed(2)}</td>
+                            <td class="px-4 py-2 ${estadoColor} capitalize">${corte.estado}</td>
+                            <td class="px-4 py-2">${voboLabel}</td>
+                            <td class="px-4 py-2">
+                                <button data-id="${corte.id}" class="btn-ver-ticket-corte text-blue-600 hover:underline text-xs">
+                                    Ver Ticket
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
                 $tabla.html(html);
             }
 
@@ -99,6 +102,8 @@ jQuery(document).ready(function($) {
             $btn.prop('disabled', false).text('Buscar');
         });
     }
+
+
 
     $(document).on('click', '.btn-ver-ticket-corte', function () {
         const corteId = $(this).data('id');
@@ -122,11 +127,16 @@ jQuery(document).ready(function($) {
             Swal.close();
 
             // Mostrar el ticket correctamente
-            mostrarTicketCierreCaja(res.data.resumen, res.data.denominaciones, res.data.usuario);
+            mostrarTicketCierreCaja(
+                res.data.resumen,
+                res.data.denominaciones,
+                res.data.usuario,
+                res.data.movimientos_detalle
+            );
         });
     });
 
-    function mostrarTicketCierreCaja(resumen, denominaciones, usuario) {
+    function mostrarTicketCierreCaja(resumen, denominaciones, usuario, detalle = {}) {
         const denominacionesTexto = Object.entries(denominaciones).map(([denom, cantidad]) => {
             return `<tr>
                 <td class="border px-2 py-1 text-right">$${parseFloat(denom).toFixed(2)}</td>
@@ -135,9 +145,35 @@ jQuery(document).ready(function($) {
             </tr>`;
         }).join('');
 
+        function renderDetalleMetodo(titulo, lista) {
+            if (!lista || lista.length === 0) return '';
+            
+            const filas = lista.map(item => `
+                <tr>
+                    <td class="border px-2 py-1 text-right">$${parseFloat(item.monto).toFixed(2)}</td>
+                    <td class="border px-2 py-1 text-left">${item.referencia || '—'}</td>
+                </tr>
+            `).join('');
+
+            return `
+                <div class="mt-4">
+                    <p class="font-bold">${titulo}:</p>
+                    <table class="w-full text-xs border mt-1 mb-2">
+                        <thead>
+                            <tr class="bg-gray-100">
+                                <th class="border px-2 py-1 text-right">Monto</th>
+                                <th class="border px-2 py-1 text-left">Referencia</th>
+                            </tr>
+                        </thead>
+                        <tbody>${filas}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
         const html = `
             <div id="ticketCierreCaja" class="p-6 max-w-md mx-auto bg-white border border-gray-300 rounded shadow text-sm font-mono">
-                <h2 class="text-xl font-bold text-center mb-2">🧾 Corte de Caja</h2>
+                <h2 class="text-xl font-bold text-center mb-2">Corte de Caja</h2>
                 <p><strong>Folio:</strong> #${resumen.id}</p>
                 <p><strong>Usuario:</strong> ${usuario}</p>
                 <p><strong>Apertura:</strong> ${resumen.fecha_apertura}</p>
@@ -145,10 +181,21 @@ jQuery(document).ready(function($) {
                 <hr class="my-2" />
                 <p><strong>Monto Inicial:</strong> $${resumen.monto_inicial.toFixed(2)}</p>
                 <p><strong>Ventas en Efectivo:</strong> $${resumen.ventas_efectivo.toFixed(2)}</p>
+                <p><strong>Ventas con Tarjeta:</strong> $${resumen.ventas_tarjeta.toFixed(2)}</p>
+                <p><strong>Ventas por Transferencia:</strong> $${resumen.ventas_transferencia.toFixed(2)}</p>
+                <p><strong>Abonos a CxC:</strong> $${resumen.abonos_cxc.toFixed(2)}</p>
                 <p><strong>Total Declarado:</strong> $${resumen.monto_cierre.toFixed(2)}</p>
-                <p><strong>Diferencia:</strong> <span class="${resumen.diferencia < 0 ? 'text-red-600' : 'text-green-600'}">$${resumen.diferencia.toFixed(2)}</span></p>
+                <p><strong>Diferencia:</strong> 
+                    <span class="${resumen.diferencia < 0 ? 'text-red-600' : 'text-green-600'}">
+                        $${resumen.diferencia.toFixed(2)}
+                    </span>
+                </p>
+                ${renderDetalleMetodo('Detalle Efectivo', detalle.efectivo)}
+                ${renderDetalleMetodo('Detalle Tarjeta', detalle.tarjeta)}
+                ${renderDetalleMetodo('Detalle Transferencia', detalle.transferencia)}
+                ${renderDetalleMetodo('Detalle Abonos CxC', detalle.cxc)}
                 <hr class="my-2" />
-                <p class="font-bold">🧮 Desglose de Billetes:</p>
+                <p class="font-bold">Desglose de Billetes:</p>
                 <table class="w-full mt-2 border text-xs">
                     <thead>
                         <tr>
@@ -160,19 +207,18 @@ jQuery(document).ready(function($) {
                     <tbody>${denominacionesTexto || `<tr><td colspan="3" class="text-center py-2">Sin desglose</td></tr>`}</tbody>
                 </table>
                 <div class="text-center mt-4 no-print">
-                    <button onclick="window.print()" class="bg-black text-white px-4 py-1 rounded text-sm">🖨️ Imprimir Ticket</button>
+                    <button onclick="window.print()" class="bg-black text-white px-4 py-1 rounded text-sm">Imprimir Ticket</button>
                 </div>
             </div>
         `;
 
         Swal.fire({
-            title: '🧾 Cierre de Caja Completado',
+            title: 'Cierre de Caja Completado',
             html: html,
             width: 600,
             showConfirmButton: false
         });
     }
-
 
     $(document).on('click', '.btn-vobo', function() {
         const corteId = $(this).data('id');

@@ -385,37 +385,51 @@ function crear_producto_autoparte() {
         'compatibilidades' => $terminos_asignados
     ]);
 }
-add_action('wp_ajax_ajax_buscar_productos_compatibles', 'ajax_buscar_productos_compatibles');
-function ajax_buscar_productos_compatibles() {
+add_action('wp_ajax_ajax_buscar_productos_compatibles', function () {
     global $wpdb;
 
-    $marca       = sanitize_text_field($_POST['marca'] ?? '');
-    $submarca    = sanitize_text_field($_POST['submarca'] ?? '');
-    $anio        = sanitize_text_field($_POST['anio'] ?? '');
-    $categoria   = sanitize_text_field($_POST['categoria'] ?? '');
-    $cliente_id  = intval($_POST['cliente_id'] ?? 0);
-    $pagina      = max(1, intval($_POST['pagina'] ?? 1));
-    $por_pagina  = max(1, intval($_POST['por_pagina'] ?? 15));
-    $offset      = ($pagina - 1) * $por_pagina;
+    $marca     = sanitize_text_field($_POST['marca'] ?? '');
+    $submarca  = sanitize_text_field($_POST['submarca'] ?? '');
+    $anio      = sanitize_text_field($_POST['anio'] ?? '');
+    $categoria = sanitize_text_field($_POST['categoria'] ?? '');
+    $pagina    = max(1, intval($_POST['pagina'] ?? 1));
+    $por_pagina = 15;
 
-    $roles_cliente = [];
-    if ($cliente_id) {
-        $user = get_user_by('id', $cliente_id);
-        if ($user) {
-            $roles_cliente = $user->roles;
+    $terminos = [];
+    if (!empty($marca))     $terminos[] = $marca;
+    if (!empty($submarca))  $terminos[] = $submarca;
+    if (!empty($anio))      $terminos[] = $anio;
+
+    $busqueda = implode(' ', $terminos);
+
+    $tax_query = [];
+
+    // Buscar coincidencias en la taxonomía de compatibilidades
+    if (!empty($busqueda)) {
+        $term_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT t.term_id FROM {$wpdb->terms} t
+             INNER JOIN {$wpdb->term_taxonomy} tt ON t.term_id = tt.term_id
+             WHERE tt.taxonomy = %s AND t.name LIKE %s",
+            'pa_compat_autopartes',
+            '%' . $wpdb->esc_like($busqueda) . '%'
+        ));
+
+        if (!empty($term_ids)) {
+            $tax_query[] = [
+                'taxonomy' => 'pa_compat_autopartes',
+                'field'    => 'term_id',
+                'terms'    => $term_ids
+            ];
+        } else {
+            wp_send_json_success([
+                'resultados' => [],
+                'total_paginas' => 0
+            ]);
+            return;
         }
     }
 
-    $termino_exacto = "$marca $submarca $anio";
-
-    $tax_query = [
-        [
-            'taxonomy' => 'pa_compat_autopartes',
-            'field'    => 'name',
-            'terms'    => [$termino_exacto],
-        ]
-    ];
-
+    // Filtro por categoría si aplica
     if (!empty($categoria)) {
         $tax_query[] = [
             'taxonomy' => 'product_cat',
@@ -426,9 +440,9 @@ function ajax_buscar_productos_compatibles() {
 
     $args = [
         'post_type'      => 'product',
-        'posts_per_page' => $por_pagina,
-        'offset'         => $offset,
         'post_status'    => 'publish',
+        'posts_per_page' => $por_pagina,
+        'paged'          => $pagina,
         'meta_query'     => [
             [
                 'key'     => '_stock',
@@ -436,9 +450,12 @@ function ajax_buscar_productos_compatibles() {
                 'compare' => '>',
                 'type'    => 'NUMERIC'
             ]
-        ],
-        'tax_query' => $tax_query
+        ]
     ];
+
+    if (!empty($tax_query)) {
+        $args['tax_query'] = $tax_query;
+    }
 
     $query = new WP_Query($args);
     $productos = [];
@@ -449,60 +466,32 @@ function ajax_buscar_productos_compatibles() {
             $product = wc_get_product(get_the_ID());
             if (!$product) continue;
 
-            $precio_base  = (float) $product->get_price();
-            $precio_final = $precio_base;
+            $sku = $product->get_sku();
+            $solicitud_id = get_post_meta($product->get_id(), 'solicitud_id', true);
+            $ubicacion = get_post_meta($product->get_id(), 'ubicacion_fisica', true);
+            $compatibilidades = wp_get_post_terms($product->get_id(), 'pa_compat_autopartes', ['fields' => 'names']);
+            $imagenes = [];
 
-            if (function_exists('get_wholesale_price_for_user') && $cliente_id > 0) {
-                $precio_plugin = get_wholesale_price_for_user($product, $cliente_id);
-                if ($precio_plugin && is_numeric($precio_plugin)) {
-                    $precio_final = floatval($precio_plugin);
-                }
+            $imagen_destacada_id = $product->get_image_id();
+            if ($imagen_destacada_id) {
+                $imagenes[] = wp_get_attachment_url($imagen_destacada_id);
             }
 
-            if ($precio_final == $precio_base && in_array('wholesale_talleres_crash', $roles_cliente)) {
-                $precio_final = round($precio_base * 0.5, 2);
-            }
-
-            $galeria = array_map(function($img_id) {
-                return wp_get_attachment_image_url($img_id, 'large');
-            }, $product->get_gallery_image_ids());
-
-            $terms = wp_get_object_terms(get_the_ID(), 'pa_compat_autopartes', ['fields' => 'names']);
-            $agrupadas = [];
-            foreach ($terms as $term) {
-                if (preg_match('/^(.+?)\s+(\d{4})$/', $term, $match)) {
-                    $clave = trim($match[1]);
-                    $anio  = intval($match[2]);
-                    $agrupadas[$clave][] = $anio;
-                }
-            }
-
-            $compatibilidades_rango = [];
-            foreach ($agrupadas as $clave => $anios) {
-                sort($anios);
-                $inicio = $fin = $anios[0];
-                for ($i = 1; $i < count($anios); $i++) {
-                    if ($anios[$i] === $fin + 1) {
-                        $fin = $anios[$i];
-                    } else {
-                        $compatibilidades_rango[] = "$clave $inicio–$fin";
-                        $inicio = $fin = $anios[$i];
-                    }
-                }
-                $compatibilidades_rango[] = "$clave $inicio–$fin";
+            $galeria_ids = $product->get_gallery_image_ids();
+            foreach ($galeria_ids as $id) {
+                $imagenes[] = wp_get_attachment_url($id);
             }
 
             $productos[] = [
-                'nombre'            => get_the_title(),
-                'sku'               => $product->get_sku(),
-                'precio'            => $precio_final,
-                'precio_base'       => $precio_base,
-                'precio_html'       => wc_price($precio_final),
-                'imagen'            => get_the_post_thumbnail_url(get_the_ID(), 'large') ?: wc_placeholder_img_src(),
-                'galeria'           => $galeria,
-                'compatibilidades'  => $compatibilidades_rango,
-                'link'              => get_permalink(),
-                'solicitud_id'      => get_post_meta($product->get_id(), 'solicitud_id', true),
+                'id'          => $product->get_id(),
+                'sku'         => $sku,
+                'nombre'      => $product->get_name(),
+                'precio'      => $product->get_price(),
+                'stock'       => $product->get_stock_quantity(),
+                'ubicacion'   => $ubicacion,
+                'solicitud_id'=> $solicitud_id ?: null,
+                'compatibilidades' => $compatibilidades,
+                'images'      => $imagenes,
             ];
         }
         wp_reset_postdata();
@@ -510,10 +499,9 @@ function ajax_buscar_productos_compatibles() {
 
     wp_send_json_success([
         'resultados'     => $productos,
-        'total_paginas'  => ceil($query->found_posts / $por_pagina)
+        'total_paginas'  => $query->max_num_pages
     ]);
-}
-
+});
 
 add_action('wp_ajax_obtener_marcas', 'obtener_marcas');
 function obtener_marcas() {
@@ -640,6 +628,32 @@ function ajax_registrar_venta_autopartes() {
     }
 
     $venta_id = $wpdb->insert_id;
+    
+    // Registrar movimiento de caja
+    $caja_id = intval($_POST['caja_id'] ?? 0);
+
+    if ($estado_pago === 'pagado') {
+        if (!$caja_id) {
+            // fallback por seguridad
+            $caja_id = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}aperturas_caja WHERE usuario_id = %d AND estado = 'abierta' ORDER BY id DESC LIMIT 1",
+                $vendedor_id
+            ));
+        }
+
+        if ($caja_id) {
+            $wpdb->insert("{$wpdb->prefix}movimientos_caja", [
+                'caja_id'      => $caja_id,
+                'tipo'         => 'venta',
+                'metodo_pago'  => $metodo_pago,
+                'monto'        => $total,
+                'usuario_id'   => $vendedor_id,
+                'referencia'   => 'Venta ID ' . $venta_id
+            ]);
+        } else {
+            error_log("❌ No se encontró caja abierta para registrar movimiento de venta $venta_id");
+        }
+    }
     error_log("✅ Venta insertada con ID: $venta_id");
 
     $order = wc_create_order(['customer_id' => $cliente_id]);
@@ -784,7 +798,6 @@ function ajax_registrar_venta_autopartes() {
     exit;
 }
 
-
 add_action('wp_ajax_subir_orden_compra', function () {
     require_once ABSPATH . 'wp-admin/includes/file.php';
     require_once ABSPATH . 'wp-admin/includes/media.php';
@@ -822,16 +835,21 @@ function ajax_actualizar_estado_armado() {
         wp_send_json_error(['message' => 'Pedido no encontrado.']);
     }
 
-    // Si el nuevo estado es "enviado", generar código de recepción
+    // Si el nuevo estado es "enviado", generar código de recepción legible
     if ($nuevo_estado === 'enviado') {
         $codigo_existente = get_post_meta($pedido_id, '_codigo_recepcion', true);
         if (empty($codigo_existente)) {
-            $codigo = strtoupper(wp_generate_password(6, false, false)); // ej: "G3F7K9"
+            $palabras = [
+                'sol', 'luz', 'rojo', 'verde', 'azul', 'nube', 'flor', 'agua',
+                'piedra', 'fuego', 'viento', 'naranja', 'hoja', 'cielo', 'luna',
+                'nieve', 'tronco', 'sombra', 'rayo', 'llama'
+            ];
+            $codigo = strtoupper($palabras[array_rand($palabras)]);
             update_post_meta($pedido_id, '_codigo_recepcion', $codigo);
         }
     }
 
-    // ✅ Si es entregado, marcar el pedido como completado en WooCommerce
+    // Si es entregado, marcar como completado
     if ($nuevo_estado === 'entregado' && $order->get_status() !== 'completed') {
         $order->update_status('completed', 'Pedido entregado y marcado como completado.');
     }
@@ -1357,16 +1375,34 @@ add_action('wp_ajax_ajax_obtener_resumen_cortes', function () {
     );
     $registros = $wpdb->get_results($sql);
 
-    $formateados = array_map(function($r) {
+    $formateados = array_map(function($r) use ($wpdb) {
         $usuario = get_userdata($r->usuario_id);
         $vobo_usuario = $r->vobo_aprobado_por ? get_userdata($r->vobo_aprobado_por) : null;
+
+        // Calcular total teórico (ventas + abonos CXC)
+        $ventas = $wpdb->get_var($wpdb->prepare("
+            SELECT SUM(monto) FROM {$wpdb->prefix}movimientos_caja
+            WHERE caja_id = %d AND tipo = 'venta'
+        ", $r->id));
+
+        $abonos = $wpdb->get_var($wpdb->prepare("
+            SELECT SUM(monto_pagado) FROM {$wpdb->prefix}pagos_cxc
+            WHERE caja_id = %d
+        ", $r->id));
+
+        $ventas = floatval($ventas);
+        $abonos = floatval($abonos);
+        $teorico = $ventas + $abonos;
+        $contado = floatval($r->total_cierre ?? 0);
+        $diferencia = $contado - $teorico;
 
         return [
             'id' => $r->id,
             'usuario' => $usuario ? $usuario->display_name : 'Usuario eliminado',
             'monto_apertura' => number_format($r->monto_inicial, 2),
-            'total_cierre' => number_format($r->total_cierre ?? 0, 2),
-            'diferencia' => number_format($r->diferencia ?? 0, 2),
+            'total_cierre' => $contado,
+            'total_teorico' => $teorico,
+            'diferencia' => $diferencia,
             'estado' => $r->estado,
             'fecha_apertura' => date('Y-m-d H:i', strtotime($r->fecha_apertura)),
             'fecha_cierre' => $r->fecha_cierre ? date('Y-m-d H:i', strtotime($r->fecha_cierre)) : null,
@@ -1381,6 +1417,7 @@ add_action('wp_ajax_ajax_obtener_resumen_cortes', function () {
         'total_paginas' => ceil($total / $por_pagina)
     ]);
 });
+
 
 add_action('wp_ajax_ajax_revertir_vobo_corte', function () {
     if (!current_user_can('manage_options')) {
@@ -1427,27 +1464,87 @@ add_action('wp_ajax_ajax_obtener_ticket_corte', function () {
     $usuario = get_userdata($corte->usuario_id);
     $nombre_usuario = $usuario ? $usuario->display_name : 'Usuario eliminado';
 
+    // Inicializar resumen
     $resumen = [
         'id' => $corte->id,
         'monto_inicial' => floatval($corte->monto_inicial),
         'monto_cierre' => floatval($corte->total_cierre),
         'diferencia' => floatval($corte->diferencia),
-        'ventas_efectivo' => 0, // Calculado abajo
+        'ventas_efectivo' => 0,
+        'ventas_tarjeta' => 0,
+        'ventas_transferencia' => 0,
+        'abonos_cxc' => 0,
         'fecha_apertura' => date('Y-m-d H:i', strtotime($corte->fecha_apertura)),
         'fecha_cierre' => $corte->fecha_cierre ? date('Y-m-d H:i', strtotime($corte->fecha_cierre)) : '-',
     ];
 
-    // Obtener total de ventas en efectivo ligadas a esta caja
-    $ventas = $wpdb->get_results($wpdb->prepare(
-        "SELECT monto FROM {$wpdb->prefix}movimientos_caja WHERE caja_id = %d AND tipo = 'venta' AND metodo_pago = 'efectivo'",
+    // Inicializar desglose por método
+    $detalles_por_metodo = [
+        'efectivo' => [],
+        'tarjeta' => [],
+        'transferencia' => [],
+        'cxc' => [],
+    ];
+
+    // MOVIMIENTOS DE CAJA: efectivo, tarjeta, transferencia
+    $movimientos = $wpdb->get_results($wpdb->prepare(
+        "SELECT monto, metodo_pago, referencia FROM {$wpdb->prefix}movimientos_caja 
+         WHERE caja_id = %d AND tipo = 'venta'",
         $corte_id
     ));
 
-    foreach ($ventas as $v) {
-        $resumen['ventas_efectivo'] += floatval($v->monto);
+    foreach ($movimientos as $mov) {
+        $metodo = $mov->metodo_pago;
+        $monto = floatval($mov->monto);
+        $referencia = $mov->referencia ?: '—';
+
+        if (isset($detalles_por_metodo[$metodo])) {
+            $resumen['ventas_' . $metodo] += $monto;
+            $detalles_por_metodo[$metodo][] = [
+                'monto' => $monto,
+                'referencia' => $referencia,
+            ];
+        }
     }
 
-    // Denominaciones
+    // PAGOS A CUENTAS POR COBRAR
+    $pagos_cxc = $wpdb->get_results($wpdb->prepare(
+        "SELECT 
+            p.monto_pagado, 
+            p.notas AS referencia, 
+            p.metodo_pago, 
+            c.venta_id, 
+            u.display_name AS cliente
+        FROM {$wpdb->prefix}pagos_cxc p
+        LEFT JOIN {$wpdb->prefix}cuentas_cobrar c ON p.cuenta_id = c.id
+        LEFT JOIN {$wpdb->prefix}users u ON c.cliente_id = u.ID
+        WHERE p.caja_id = %d",
+        $corte_id
+    ));
+
+    foreach ($pagos_cxc as $pago) {
+        $monto = floatval($pago->monto_pagado);
+        $referencia = $pago->referencia ?: '—';
+        $metodo = $pago->metodo_pago;
+        $venta_id = $pago->venta_id ?: '—';
+        $cliente = $pago->cliente ?: 'Cliente desconocido';
+
+        $resumen['abonos_cxc'] += $monto;
+
+        $detalle = [
+            'monto' => $monto,
+            'referencia' => "[CXC] $referencia (Venta #$venta_id - $cliente)"
+        ];
+
+        if (isset($detalles_por_metodo[$metodo])) {
+            $detalles_por_metodo[$metodo][] = $detalle;
+        } else {
+            $detalles_por_metodo['cxc'][] = $detalle;
+        }
+    }
+
+
+    // DENOMINACIONES
     $denominaciones = [];
     if ($corte->detalle_cierre) {
         $json = json_decode($corte->detalle_cierre, true);
@@ -1456,10 +1553,12 @@ add_action('wp_ajax_ajax_obtener_ticket_corte', function () {
         }
     }
 
+    // RESPUESTA FINAL
     wp_send_json_success([
         'resumen' => $resumen,
         'denominaciones' => $denominaciones,
-        'usuario' => $nombre_usuario
+        'usuario' => $nombre_usuario,
+        'movimientos_detalle' => $detalles_por_metodo
     ]);
 });
 
@@ -1538,21 +1637,31 @@ function ajax_registrar_pago_cxc() {
         wp_send_json_error(['message' => 'El monto pagado excede el saldo pendiente actual.']);
     }
 
+    // 🟢 Buscar caja abierta del usuario
+    $usuario_id = get_current_user_id();
+    $caja_id = $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM {$wpdb->prefix}aperturas_caja 
+         WHERE usuario_id = %d AND estado = 'abierta' 
+         ORDER BY id DESC LIMIT 1",
+        $usuario_id
+    ));
+
+    if (!$caja_id) {
+        wp_send_json_error(['message' => 'No tienes una caja abierta.']);
+    }
+
     // ✅ Subir comprobante si se envió
     $comprobante_url = '';
-
     if (!empty($_FILES['comprobante_pago']['name'])) {
         require_once ABSPATH . 'wp-admin/includes/file.php';
 
         $file = $_FILES['comprobante_pago'];
-
-        // Tipos permitidos
         $allowed_types = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+
         if (!in_array($file['type'], $allowed_types)) {
             wp_send_json_error(['message' => 'Formato no permitido. Usa PDF, JPG, PNG o WEBP.']);
         }
 
-        // Comprimir imagen si es JPG o PNG
         if (in_array($file['type'], ['image/jpeg', 'image/png'])) {
             $editor = wp_get_image_editor($file['tmp_name']);
             if (!is_wp_error($editor)) {
@@ -1562,7 +1671,6 @@ function ajax_registrar_pago_cxc() {
             }
         }
 
-        // Subir sin crear attachment ni metadatos
         $upload = wp_handle_upload($file, ['test_form' => false, 'mimes' => [
             'pdf' => 'application/pdf',
             'jpg|jpeg' => 'image/jpeg',
@@ -1580,14 +1688,16 @@ function ajax_registrar_pago_cxc() {
     // 🧾 Insertar pago
     $wpdb->insert("{$wpdb->prefix}pagos_cxc", [
         'cuenta_id'       => $cuenta_id,
+        'caja_id'         => $caja_id,
         'monto_pagado'    => $monto,
         'metodo_pago'     => $metodo,
         'notas'           => $notas,
         'fecha_pago'      => current_time('mysql'),
-        'comprobante_url' => $comprobante_url
+        'comprobante_url' => $comprobante_url,
+        'registrado_por'  => $usuario_id
     ]);
 
-    //  Actualizar cuenta
+    // 🧮 Actualizar cuenta por cobrar
     $nuevo_pagado = floatval($cuenta->monto_pagado) + $monto;
     $nuevo_saldo  = max(0, $saldo_actual - $monto);
     $estado       = $nuevo_saldo <= 0 ? 'pagado' : 'pendiente';
@@ -1598,9 +1708,18 @@ function ajax_registrar_pago_cxc() {
         'estado'          => $estado
     ], ['id' => $cuenta_id]);
 
+    // 🧾 Registrar movimiento en caja
+    $wpdb->insert("{$wpdb->prefix}movimientos_caja", [
+        'caja_id'      => $caja_id,
+        'tipo'         => 'pago',
+        'metodo_pago'  => $metodo,
+        'monto'        => $monto,
+        'usuario_id'   => $usuario_id,
+        'referencia'   => 'Pago a cuenta por cobrar ID #' . $cuenta_id
+    ]);
+
     wp_send_json_success(['message' => '✅ Pago registrado correctamente.']);
 }
-
 
 add_action('wp_ajax_ajax_validar_credito_cliente', 'ajax_validar_credito_cliente');
 
@@ -2088,8 +2207,8 @@ function ajax_buscar_autopartes_front() {
         // Buscar términos que empiecen con la palabra ingresada
         $term_ids = $wpdb->get_col($wpdb->prepare(
             "SELECT t.term_id FROM {$wpdb->terms} t 
-             INNER JOIN {$wpdb->term_taxonomy} tt ON t.term_id = tt.term_id 
-             WHERE tt.taxonomy = %s AND t.name LIKE %s",
+            INNER JOIN {$wpdb->term_taxonomy} tt ON t.term_id = tt.term_id 
+            WHERE tt.taxonomy = %s AND t.name LIKE %s",
             'pa_compat_autopartes',
             '%' . $wpdb->esc_like($compat) . '%'
         ));
@@ -3369,14 +3488,19 @@ function ajax_verificar_caja_abierta() {
     global $wpdb;
     $usuario_id = get_current_user_id();
 
-    $existe = $wpdb->get_var($wpdb->prepare(
-        "SELECT COUNT(*) FROM {$wpdb->prefix}aperturas_caja 
-        WHERE usuario_id = %d AND estado = 'abierta'",
+    $caja = $wpdb->get_row($wpdb->prepare(
+        "SELECT id FROM {$wpdb->prefix}aperturas_caja 
+         WHERE usuario_id = %d AND estado = 'abierta'
+         ORDER BY id DESC LIMIT 1",
         $usuario_id
     ));
 
-    if ($existe > 0) {
-        wp_send_json_success(['mensaje' => 'Caja abierta']);
+    if ($caja) {
+        wp_send_json_success([
+            'mensaje' => 'Caja abierta',
+            'caja_id' => $caja->id,
+            'folio'   => 'A' . $caja->id // opcional, si quieres usarlo
+        ]);
     } else {
         wp_send_json_error(['mensaje' => 'No tienes una caja abierta']);
     }
@@ -3714,15 +3838,13 @@ add_action('wp_ajax_ajax_cerrar_caja', function () {
 
     $user_id = get_current_user_id();
     $notas = sanitize_textarea_field($_POST['notas'] ?? '');
-
-    // ✅ Asegúrate de decodificar correctamente el JSON enviado desde JS
     $detalle = isset($_POST['detalle_cierre']) ? json_decode(stripslashes($_POST['detalle_cierre']), true) : [];
 
     if (empty($detalle) || !is_array($detalle)) {
         wp_send_json_error(['message' => 'No se proporcionó el conteo de efectivo.']);
     }
 
-    // Validar si hay una caja abierta
+    // Buscar la caja abierta del usuario
     $caja = $wpdb->get_row($wpdb->prepare("
         SELECT * FROM {$wpdb->prefix}aperturas_caja
         WHERE usuario_id = %d AND estado = 'abierta'
@@ -3733,31 +3855,41 @@ add_action('wp_ajax_ajax_cerrar_caja', function () {
         wp_send_json_error(['message' => 'No hay una caja abierta para cerrar.']);
     }
 
-    // Calcular total contado
+    $caja_id = intval($caja->id);
+
+    // Calcular efectivo ingresado por movimientos (ventas + pagos CxC en efectivo)
+    $efectivo_registrado = floatval($wpdb->get_var($wpdb->prepare(
+        "SELECT SUM(monto) FROM {$wpdb->prefix}movimientos_caja
+         WHERE caja_id = %d AND metodo_pago = 'efectivo'",
+        $caja_id
+    )));
+
+    // Calcular efectivo contado manualmente
     $total_contado = 0;
     foreach ($detalle as $denom => $cantidad) {
         $total_contado += intval($denom) * intval($cantidad);
     }
 
-    // Guardar el cierre
+    // Actualizar la caja
     $wpdb->update("{$wpdb->prefix}aperturas_caja", [
-        'estado'          => 'cerrada',
-        'fecha_cierre'    => current_time('mysql'),
-        'notas'           => $notas,
-        'total_cierre' => $total_contado,
-        'diferencia'   => $total_contado - floatval($caja->monto_inicial),
-    ], ['id' => $caja->id]);
+        'estado'         => 'cerrada',
+        'fecha_cierre'   => current_time('mysql'),
+        'notas'          => $notas,
+        'detalle_cierre' => maybe_serialize($detalle),
+        'total_cierre'   => $total_contado,
+        'diferencia'     => $total_contado - $efectivo_registrado,
+    ], ['id' => $caja_id]);
 
     wp_send_json_success([
         'message' => 'Caja cerrada correctamente.',
         'resumen' => [
-            'id'              => $caja->id, // ✅ Agrega el ID aquí
+            'id'              => $caja_id,
             'monto_inicial'   => floatval($caja->monto_inicial),
             'monto_cierre'    => $total_contado,
             'fecha_apertura'  => $caja->fecha_apertura,
             'fecha_cierre'    => current_time('mysql'),
-            'diferencia'      => $total_contado - floatval($caja->monto_inicial),
-            'ventas_efectivo' => 0
+            'diferencia'      => $total_contado - $efectivo_registrado,
+            'ventas_efectivo' => $efectivo_registrado
         ]
     ]);
 });
@@ -3959,15 +4091,57 @@ add_action('plugins_loaded', function() {
         }
 
         public function process_payment($order_id) {
+            $user_id = get_current_user_id();
+
+            if (!$user_id) {
+                wc_add_notice('⚠️ Debes iniciar sesión para usar crédito.', 'error');
+                return ['result' => 'failure'];
+            }
+
+            // Obtener estado y crédito
+            $estado_credito = get_user_meta($user_id, 'estado_credito', true);
+            $credito_total = floatval(get_user_meta($user_id, 'credito_disponible', true) ?: 0);
+
+            // Obtener deuda actual
+            global $wpdb;
+            $cuentas = $wpdb->get_results($wpdb->prepare(
+                "SELECT saldo_pendiente FROM {$wpdb->prefix}cuentas_cobrar WHERE cliente_id = %d AND estado = 'pendiente'",
+                $user_id
+            ));
+
+            $deuda_actual = 0;
+            foreach ($cuentas as $cuenta) {
+                $deuda_actual += floatval(str_replace(['$', ','], '', $cuenta->saldo_pendiente));
+            }
+
+            $credito_disponible = $credito_total - $deuda_actual;
+
+            // Total del carrito
+            $total_carrito = WC()->cart->get_total('edit');
+            $total_numerico = floatval(preg_replace('/[^\d.]/', '', $total_carrito));
+
+            // Validaciones
+            if (strtolower($estado_credito) !== 'activo') {
+                wc_add_notice('❌ Tu crédito no está activo.', 'error');
+                return ['result' => 'failure'];
+            }
+
+            if ($credito_disponible < $total_numerico) {
+                wc_add_notice('❌ No tienes crédito suficiente para esta compra.', 'error');
+                return ['result' => 'failure'];
+            }
+
+            // Si todo es válido, completar pedido
             $order = wc_get_order($order_id);
             $order->payment_complete();
             WC()->cart->empty_cart();
 
             return [
-                'result' => 'success',
-                'redirect' => $this->get_return_url($order)
+                'result'   => 'success',
+                'redirect' => $this->get_return_url($order),
             ];
         }
+
     }
 });
 
@@ -4199,32 +4373,51 @@ add_action('template_redirect', function() {
 });
 
 // Habilitar el método de pago "credito_cliente" en WooCommerce Blocks
-add_action('woocommerce_blocks_loaded', function() {
-    if (!class_exists('Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType')) {
-        return;
-    }
+// add_action('woocommerce_blocks_loaded', function() {
+//     if (!class_exists('Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType')) {
+//         return;
+//     }
 
-    if (!class_exists('WC_Gateway_Credito_Cliente_Blocks')) {
-        class WC_Gateway_Credito_Cliente_Blocks extends Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType {
-            protected $name = 'credito_cliente'; // ID exacto
-            protected $settings = [];
-            protected $supports = [ 'products', 'cart', 'checkout' ];
-    
-            public function initialize() {
-                $this->settings = get_option('woocommerce_credito_cliente_settings', []);
-            }
-    
-            public function get_payment_method_script_handles() {
-                return []; // Esto es obligatorio aunque no cargues JS adicional
-            }
-        }
-    }
+//     if (!class_exists('WC_Gateway_Credito_Cliente_Blocks')) {
+//         class WC_Gateway_Credito_Cliente_Blocks extends Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType {
+//             protected $name = 'credito_cliente'; // ID exacto de tu gateway
 
-    add_action('woocommerce_blocks_payment_method_type_registration', function($payment_method_registry) {
-        $payment_method_registry->register(new WC_Gateway_Credito_Cliente_Blocks());
+//             public function initialize() {
+//                 $this->settings = get_option('woocommerce_credito_cliente_settings', []);
+//             }
+
+//             public function is_active() {
+//                 return is_user_logged_in() && get_user_meta(get_current_user_id(), 'estado_credito', true) === 'activo';
+//             }
+
+//             public function get_payment_method_script_handles() {
+//                 return []; // No se requiere script JS adicional
+//             }
+
+//             public function get_payment_method_data() {
+//                 return [
+//                     'title'       => $this->settings['title'] ?? 'Pago a Crédito',
+//                     'description' => $this->settings['description'] ?? 'Usa tu crédito disponible para completar tu compra.',
+//                     'supports'    => [],
+//                 ];
+//             }
+//         }
+//     }
+
+//     add_action('woocommerce_blocks_payment_method_type_registration', function($payment_method_registry) {
+//         $payment_method_registry->register(new WC_Gateway_Credito_Cliente_Blocks());
+//     });
+// });
+
+add_action('woocommerce_blocks_loaded', function () {
+    if (!class_exists('Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType')) return;
+
+    require_once plugin_dir_path(__FILE__) . 'includes/class-wc-credito-cliente-blocks.php';
+
+    add_action('woocommerce_blocks_payment_method_type_registration', function($registry) {
+        $registry->register(new WC_Gateway_Credito_Cliente_Blocks());
     });
 });
-
 
 add_filter('woocommerce_my_account_my_orders_actions', function($actions, $order) {
     $order_id = $order->get_id();
@@ -4718,8 +4911,27 @@ add_action('wp_ajax_ajax_solicitar_devolucion_cliente', function () {
         wp_send_json_error(['message' => 'Error al registrar la devolución.']);
     }
 
+    // Marcar el pedido como "con devolución en proceso"
+    update_post_meta($order_id, '_devolucion_en_proceso', '1');
+
     wp_send_json_success(['message' => 'Solicitud de devolución registrada.']);
 });
+
+// add_filter('woocommerce_my_account_my_orders_column_order-status', function($status_html, $order = null) {
+//     if (!$order || !is_object($order) || !method_exists($order, 'get_id')) {
+//         return $status_html;
+//     }
+
+//     $order_id = $order->get_id();
+
+//     $devolucion_en_proceso = get_post_meta($order_id, '_devolucion_en_proceso', true);
+
+//     if ($devolucion_en_proceso === '1') {
+//         return '<span class="order-status status-devolucion" style="color:#d97706;">🌀 En proceso de devolución</span>';
+//     }
+
+//     return $status_html;
+// }, 20, 2);
 
 add_action('wp_enqueue_scripts', function() {
     if (is_account_page()) {
@@ -5245,18 +5457,18 @@ add_action('woocommerce_blocks_payment_method_type_registration', function($paym
         return;
     }
 
-    if (!class_exists('WC_Gateway_Credito_Cliente_Blocks')) {
-        class WC_Gateway_Credito_Cliente_Blocks extends Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType {
-            protected $name = 'credito_cliente';
-            protected $settings = [];
-            protected $supports = ['products', 'cart', 'checkout'];
+    // if (!class_exists('WC_Gateway_Credito_Cliente_Blocks')) {
+    //     class WC_Gateway_Credito_Cliente_Blocks extends Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType {
+    //         protected $name = 'credito_cliente';
+    //         protected $settings = [];
+    //         protected $supports = ['products', 'cart', 'checkout'];
 
-            public function initialize() {
-                error_log('🧩 initialize() de WC_Gateway_Credito_Cliente_Blocks ejecutado');
-                $this->settings = get_option('woocommerce_credito_cliente_settings', []);
-            }
-        }
-    }
+    //         public function initialize() {
+    //             error_log('🧩 initialize() de WC_Gateway_Credito_Cliente_Blocks ejecutado');
+    //             $this->settings = get_option('woocommerce_credito_cliente_settings', []);
+    //         }
+    //     }
+    // }
 
     $payment_method_registry->register(new WC_Gateway_Credito_Cliente_Blocks());
 });

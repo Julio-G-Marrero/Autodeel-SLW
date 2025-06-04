@@ -30,7 +30,7 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
     <div id="tabsEstados" class="flex flex-wrap gap-2 mb-6">
         <button data-estado="" class="tab-estado px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300 active">Todos</button>
         <button data-estado="pendiente" class="tab-estado px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300">Pendiente</button>
-        <button data-estado="en_revision" class="tab-estado px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300">En Revisión</button>
+        <!-- <button data-estado="en_revision" class="tab-estado px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300">En Revisión</button> -->
         <button data-estado="resuelto" class="tab-estado px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300">Resuelto</button>
         <button data-estado="rechazado" class="tab-estado px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300">Rechazado</button>
     </div>

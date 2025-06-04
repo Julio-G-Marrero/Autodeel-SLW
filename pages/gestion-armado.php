@@ -214,27 +214,38 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
       }
     }
 
-    if (nuevoEstado === 'entregado') {
-      Swal.fire({
-        title: 'Confirmar entrega',
-        html: `Ingresa la palabra clave de entrega:<br><input type="text" id="inputClave" class="swal2-input" placeholder="Código...">`,
-        showCancelButton: true,
-        confirmButtonText: 'Validar',
-        preConfirm: () => {
-          const input = document.getElementById('inputClave').value.trim();
-          if (!input || input !== claveRecepcion) {
-            Swal.showValidationMessage('Palabra clave incorrecta.');
-            return false;
-          }
-          return true;
+  if (nuevoEstado === 'entregado') {
+    Swal.fire({
+      title: 'Confirmar entrega',
+      html: `
+        Ingresa la palabra clave de entrega:<br>
+        <input type="text" id="inputClave" class="swal2-input" placeholder="Código..." style="text-transform:uppercase">
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Validar',
+      didOpen: () => {
+        const input = document.getElementById('inputClave');
+        // Forzar escritura en mayúsculas al escribir
+        input.addEventListener('input', () => {
+          input.value = input.value.toUpperCase();
+        });
+      },
+      preConfirm: () => {
+        const input = document.getElementById('inputClave').value.trim();
+        if (!input || input !== claveRecepcion) {
+          Swal.showValidationMessage('Palabra clave incorrecta.');
+          return false;
         }
-      }).then(result => {
-        if (result.isConfirmed) {
-          actualizarEstadoArmado(pedidoId, nuevoEstado);
-        }
-      });
-      return;
-    }
+        return true;
+      }
+    }).then(result => {
+      if (result.isConfirmed) {
+        actualizarEstadoArmado(pedidoId, nuevoEstado);
+      }
+    });
+    return;
+  }
+
 
     confirmarYActualizarEstado(pedidoId, nuevoEstado);
   });
