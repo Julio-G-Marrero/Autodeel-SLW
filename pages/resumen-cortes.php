@@ -27,23 +27,26 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 
     <div class="overflow-x-auto bg-white shadow rounded">
         <table class="min-w-full text-sm text-left">
-            <!-- <thead class="bg-gray-100 text-gray-700">
+            <thead class="bg-gray-100 text-gray-700">
                 <tr>
                     <th class="px-4 py-2">Folio</th>
                     <th class="px-4 py-2">Usuario</th>
                     <th class="px-4 py-2">Apertura</th>
                     <th class="px-4 py-2">Cierre</th>
-                    <th class="px-4 py-2">Total Cierre</th>
+                    <th class="px-4 py-2">Teórico</th>
+                    <th class="px-4 py-2">Declarado</th>
+                    <th class="px-4 py-2">Diferencia</th>
                     <th class="px-4 py-2">Estado</th>
                     <th class="px-4 py-2">V°B°</th>
                     <th class="px-4 py-2">Acciones</th>
                 </tr>
-            </thead> -->
+            </thead>
             <tbody id="tablaCortesCaja">
-                <tr><td colspan="7" class="text-center py-4">Cargando cortes...</td></tr>
+                <tr><td colspan="10" class="text-center py-4">Cargando cortes...</td></tr>
             </tbody>
         </table>
     </div>
+
 </div>
 
 <script>

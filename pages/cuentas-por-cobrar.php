@@ -9,7 +9,10 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 // Agrega un contenedor para paginación
 ?>
 <div class="max-w-7xl mx-auto p-6">
-    <h2 class="text-2xl font-bold mb-6">Cuentas por Cobrar</h2>
+    <div class="flex justify-between">
+        <h2 class="text-2xl font-bold mb-6">Cuentas por Cobrar</h2>
+        <button onclick="exportarComoPDF()" class="bg-green-600 text-white px-4 py-2 rounded w-22 h-10">Exportar PDF</button>
+    </div>
 
     <!-- Filtros -->
     <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
@@ -47,7 +50,9 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
             <tbody id="tablaCuentasCXC"></tbody>
         </table>
     </div>
-
+    <div id="reportePDF" style="display:none">
+    <!-- Clona aquí la tabla de cuentas o usa contenido oculto -->
+    </div>
     <!-- Paginación -->
     <div class="mt-4 text-center">
         <button id="btnAnterior" class="px-4 py-2 bg-gray-200 rounded">Anterior</button>
@@ -57,6 +62,140 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
 </div>
 
 <script>
+    
+function exportarComoPDF() {
+    const tabla = document.getElementById('tablaCuentasCXC');
+    if (!tabla || tabla.innerHTML.trim() === '') {
+        Swal.fire('Sin datos', 'No hay datos para exportar.', 'warning');
+        return;
+    }
+
+    // Ocultar botones no deseados (acciones)
+    tabla.querySelectorAll('.registrar-pago, .ver-historial, a[href*="orden_compra"]').forEach(el => {
+        el.style.display = 'none';
+    });
+
+    let filas = '';
+    let totalPendiente = 0;
+
+    tabla.querySelectorAll('tr').forEach(tr => {
+        const tds = tr.querySelectorAll('td');
+        if (tds.length >= 6) {
+            const cliente = tds[0].innerText;
+            const total = tds[1].innerText;
+            const pendiente = parseFloat(tds[3].innerText.replace(/[^\d.-]/g, '')) || 0;
+            const vence = tds[4].innerText;
+            const estado = tds[5].innerText;
+
+            totalPendiente += pendiente;
+
+            filas += `
+                <tr>
+                    <td>${cliente}</td>
+                    <td class="right">${total}</td>
+                    <td class="right">$${pendiente.toFixed(2)}</td>
+                    <td>${vence}</td>
+                    <td>${estado}</td>
+                </tr>
+            `;
+        }
+    });
+
+    const estilo = `
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                color: #333;
+                padding: 40px;
+            }
+            h1 {
+                text-align: center;
+                font-size: 22px;
+                margin-top: 10px;
+                margin-bottom: 30px;
+                color: #1f2937;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+                font-size: 12px;
+            }
+            th {
+                background-color: #f3f4f6;
+                color: #111827;
+                padding: 10px;
+                border: 1px solid #ccc;
+                text-align: left;
+            }
+            td {
+                padding: 8px;
+                border: 1px solid #ddd;
+                font-size: 11px;
+            }
+            .right {
+                text-align: right;
+            }
+            .total-row {
+                font-weight: bold;
+                background-color: #fef3c7;
+            }
+            footer {
+                margin-top: 40px;
+                text-align: center;
+                font-size: 11px;
+                color: #999;
+            }
+            .logo {
+                width: 150px;
+                display: block;
+                margin: 0 auto 20px;
+            }
+        </style>
+    `;
+
+    const ventana = window.open('', '', 'width=1000,height=800');
+    ventana.document.write(`
+        <html>
+            <head>
+                <title>Reporte Cuentas por Cobrar</title>
+                ${estilo}
+            </head>
+            <body>
+                <img src="https://dev-autodeel-slw.pantheonsite.io/wp-content/uploads/2025/05/LOGOSINFONDO-3-1.png" class="logo" />
+                <h1>Estado de Cuenta - Cuentas por Cobrar</h1>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>Monto Total</th>
+                            <th>Saldo Pendiente</th>
+                            <th>Fecha Vencimiento</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filas}
+                        <tr class="total-row">
+                            <td colspan="2">Total General</td>
+                            <td class="right">$${totalPendiente.toFixed(2)}</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <footer>
+                    Reporte generado el ${new Date().toLocaleDateString()} – App Refacciones
+                </footer>
+            </body>
+        </html>
+    `);
+
+    ventana.document.close();
+    ventana.focus();
+    ventana.print();
+}
+
+
 jQuery(document).ready(function($) {
     let pagina = 1;
 
@@ -274,7 +413,7 @@ jQuery(document).ready(function($) {
                     resp.data.forEach(p => {
                         tabla += `<tr>
                             <td class="border px-2 py-1">${p.fecha}</td>
-                            <td class="border px-2 py-1">$${parseFloat(p.monto).toFixed(2)}</td>
+                            <td class="border px-2 py-1">-$${parseFloat(p.monto).toFixed(2)}</td>
                             <td class="border px-2 py-1">${p.metodo}</td>
                             <td class="border px-2 py-1">${p.notas || '-'}</td>
                             <td class="border px-2 py-1 text-center">

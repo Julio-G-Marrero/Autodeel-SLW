@@ -1379,20 +1379,24 @@ add_action('wp_ajax_ajax_obtener_resumen_cortes', function () {
         $usuario = get_userdata($r->usuario_id);
         $vobo_usuario = $r->vobo_aprobado_por ? get_userdata($r->vobo_aprobado_por) : null;
 
-        // Calcular total teórico (ventas + abonos CXC)
-        $ventas = $wpdb->get_var($wpdb->prepare("
+        // Solo sumar efectivo de ventas
+        $ventas_efectivo = $wpdb->get_var($wpdb->prepare("
             SELECT SUM(monto) FROM {$wpdb->prefix}movimientos_caja
-            WHERE caja_id = %d AND tipo = 'venta'
+            WHERE caja_id = %d AND tipo = 'venta' AND metodo_pago = 'efectivo'
         ", $r->id));
 
-        $abonos = $wpdb->get_var($wpdb->prepare("
-            SELECT SUM(monto_pagado) FROM {$wpdb->prefix}pagos_cxc
-            WHERE caja_id = %d
+        // Solo sumar efectivo de abonos a cuentas por cobrar
+        $abonos_efectivo = $wpdb->get_var($wpdb->prepare("
+            SELECT SUM(p.monto_pagado) 
+            FROM {$wpdb->prefix}pagos_cxc p
+            WHERE p.caja_id = %d AND p.metodo_pago = 'efectivo'
         ", $r->id));
 
-        $ventas = floatval($ventas);
-        $abonos = floatval($abonos);
-        $teorico = $ventas + $abonos;
+        $ventas_efectivo = floatval($ventas_efectivo);
+        $abonos_efectivo = floatval($abonos_efectivo);
+
+        // Total teórico efectivo
+        $teorico = $ventas_efectivo + $abonos_efectivo;
         $contado = floatval($r->total_cierre ?? 0);
         $diferencia = $contado - $teorico;
 
@@ -1411,6 +1415,7 @@ add_action('wp_ajax_ajax_obtener_resumen_cortes', function () {
             'vobo_fecha' => $r->vobo_fecha_aprobacion ? date('Y-m-d H:i', strtotime($r->vobo_fecha_aprobacion)) : null
         ];
     }, $registros);
+
 
     wp_send_json_success([
         'cortes' => $formateados,
@@ -3489,18 +3494,29 @@ function ajax_verificar_caja_abierta() {
     $usuario_id = get_current_user_id();
 
     $caja = $wpdb->get_row($wpdb->prepare(
-        "SELECT id FROM {$wpdb->prefix}aperturas_caja 
+        "SELECT id, fecha_apertura FROM {$wpdb->prefix}aperturas_caja 
          WHERE usuario_id = %d AND estado = 'abierta'
          ORDER BY id DESC LIMIT 1",
         $usuario_id
     ));
 
     if ($caja) {
-        wp_send_json_success([
-            'mensaje' => 'Caja abierta',
-            'caja_id' => $caja->id,
-            'folio'   => 'A' . $caja->id // opcional, si quieres usarlo
-        ]);
+        $fecha_caja = date('Y-m-d', strtotime($caja->fecha_apertura));
+        $hoy = current_time('Y-m-d');
+
+        if ($fecha_caja !== $hoy) {
+            wp_send_json_error([
+                'mensaje' => 'Tienes una caja abierta de un día anterior. Debes cerrarla antes de continuar.',
+                'caja_id' => $caja->id,
+                'fecha'   => $fecha_caja
+            ]);
+        } else {
+            wp_send_json_success([
+                'mensaje' => 'Caja abierta del día actual',
+                'caja_id' => $caja->id,
+                'folio'   => 'A' . $caja->id
+            ]);
+        }
     } else {
         wp_send_json_error(['mensaje' => 'No tienes una caja abierta']);
     }
@@ -3794,44 +3810,64 @@ add_action('wp_ajax_ajax_abrir_caja', function () {
         }
     }
 
-    // Verificar que no haya una caja abierta
-    $ya_abierta = $wpdb->get_var($wpdb->prepare(
-        "SELECT COUNT(*) FROM {$wpdb->prefix}aperturas_caja WHERE usuario_id = %d AND estado = 'abierta'",
+    // Verificar si ya hay una caja abierta hoy
+    $hoy = current_time('Y-m-d'); // Fecha actual en formato YYYY-MM-DD
+    $caja_abierta_hoy = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM {$wpdb->prefix}aperturas_caja 
+         WHERE usuario_id = %d AND estado = 'abierta' 
+         AND DATE(fecha_apertura) = %s",
+        $user_id, $hoy
+    ));
+
+    // Verificar si ya hay alguna caja abierta (sin importar la fecha)
+    $caja_abierta = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM {$wpdb->prefix}aperturas_caja 
+        WHERE usuario_id = %d AND estado = 'abierta'
+        ORDER BY fecha_apertura DESC LIMIT 1",
         $user_id
     ));
 
-    if ($ya_abierta > 0) {
-        wp_send_json_error(['message' => 'Ya tienes una caja abierta.']);
+    if ($caja_abierta) {
+        $fecha_apertura = date('Y-m-d', strtotime($caja_abierta->fecha_apertura));
+        $hoy = current_time('Y-m-d');
+
+        if ($fecha_apertura !== $hoy) {
+            wp_send_json_error([
+                'message' => 'Tienes una caja abierta del día anterior que debes cerrar antes de abrir una nueva.',
+                'fecha_apertura' => $fecha_apertura,
+                'caja_id' => $caja_abierta->id
+            ]);
+        } else {
+            wp_send_json_error(['message' => 'Ya tienes una caja abierta hoy.']);
+        }
     }
 
+    // Insertar la nueva caja
     $insertado = $wpdb->insert("{$wpdb->prefix}aperturas_caja", [
-        'usuario_id'      => $user_id,
-        'monto_inicial'   => $monto_total,
-        'fecha_apertura'  => current_time('mysql'),
-        'estado'          => 'abierta',
-        'notas'           => $notas,
-        'detalle_apertura'=> maybe_serialize($denominaciones)
+        'usuario_id'       => $user_id,
+        'monto_inicial'    => $monto_total,
+        'fecha_apertura'   => current_time('mysql'),
+        'estado'           => 'abierta',
+        'notas'            => $notas,
+        'detalle_apertura' => maybe_serialize($denominaciones)
     ]);
 
     if (!$insertado) {
         wp_send_json_error(['message' => 'Error al registrar apertura de caja.']);
     }
-    // Obtener nombre del usuario para mostrar en el ticket
-    $caja_id = $wpdb->insert_id;
 
-    $usuario = get_userdata($user_id); // ✅ Obtener usuario correctamente
-
+    $usuario = get_userdata($user_id);
     wp_send_json_success([
         'message' => 'Caja abierta correctamente',
         'resumen' => [
-            'id'             => $wpdb->insert_id, // ✅ ID de la caja
+            'id'             => $wpdb->insert_id,
             'fecha_apertura' => current_time('mysql'),
             'monto_inicial'  => $monto_total
         ],
         'usuario' => $usuario ? $usuario->display_name : 'Desconocido'
     ]);
-
 });
+
 
 add_action('wp_ajax_ajax_cerrar_caja', function () {
     global $wpdb;
@@ -3844,52 +3880,59 @@ add_action('wp_ajax_ajax_cerrar_caja', function () {
         wp_send_json_error(['message' => 'No se proporcionó el conteo de efectivo.']);
     }
 
-    // Buscar la caja abierta del usuario
-    $caja = $wpdb->get_row($wpdb->prepare("
-        SELECT * FROM {$wpdb->prefix}aperturas_caja
-        WHERE usuario_id = %d AND estado = 'abierta'
-        ORDER BY fecha_apertura DESC LIMIT 1
-    ", $user_id));
+    // Obtener la caja abierta
+    $caja = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM {$wpdb->prefix}aperturas_caja
+         WHERE usuario_id = %d AND estado = 'abierta'
+         ORDER BY fecha_apertura DESC LIMIT 1",
+        $user_id
+    ));
 
     if (!$caja) {
         wp_send_json_error(['message' => 'No hay una caja abierta para cerrar.']);
     }
 
-    $caja_id = intval($caja->id);
-
-    // Calcular efectivo ingresado por movimientos (ventas + pagos CxC en efectivo)
-    $efectivo_registrado = floatval($wpdb->get_var($wpdb->prepare(
-        "SELECT SUM(monto) FROM {$wpdb->prefix}movimientos_caja
-         WHERE caja_id = %d AND metodo_pago = 'efectivo'",
-        $caja_id
-    )));
-
-    // Calcular efectivo contado manualmente
-    $total_contado = 0;
+    // Calcular efectivo contado
+    $efectivo_contado = 0;
     foreach ($detalle as $denom => $cantidad) {
-        $total_contado += intval($denom) * intval($cantidad);
+        $efectivo_contado += intval($denom) * intval($cantidad);
     }
 
-    // Actualizar la caja
+    // Calcular efectivo esperado: ventas y abonos en efectivo
+    $ventas_efectivo = floatval($wpdb->get_var($wpdb->prepare(
+        "SELECT SUM(monto) FROM {$wpdb->prefix}movimientos_caja
+         WHERE caja_id = %d AND tipo = 'venta' AND metodo_pago = 'efectivo'",
+        $caja->id
+    )));
+
+    $abonos_efectivo = floatval($wpdb->get_var($wpdb->prepare(
+        "SELECT SUM(monto_pagado) FROM {$wpdb->prefix}pagos_cxc
+         WHERE caja_id = %d AND metodo_pago = 'efectivo'",
+        $caja->id
+    )));
+
+    $efectivo_teorico = $ventas_efectivo + $abonos_efectivo;
+    $diferencia = $efectivo_contado - $efectivo_teorico;
+
+    // Guardar en DB
     $wpdb->update("{$wpdb->prefix}aperturas_caja", [
-        'estado'         => 'cerrada',
-        'fecha_cierre'   => current_time('mysql'),
-        'notas'          => $notas,
-        'detalle_cierre' => maybe_serialize($detalle),
-        'total_cierre'   => $total_contado,
-        'diferencia'     => $total_contado - $efectivo_registrado,
-    ], ['id' => $caja_id]);
+        'estado'          => 'cerrada',
+        'fecha_cierre'    => current_time('mysql'),
+        'notas'           => $notas,
+        'detalle_cierre'  => maybe_serialize($detalle),
+        'total_cierre'    => $efectivo_contado,
+        'diferencia'      => $diferencia
+    ], ['id' => $caja->id]);
 
     wp_send_json_success([
         'message' => 'Caja cerrada correctamente.',
         'resumen' => [
-            'id'              => $caja_id,
+            'id'              => $caja->id,
             'monto_inicial'   => floatval($caja->monto_inicial),
-            'monto_cierre'    => $total_contado,
+            'monto_cierre'    => $efectivo_contado,
             'fecha_apertura'  => $caja->fecha_apertura,
             'fecha_cierre'    => current_time('mysql'),
-            'diferencia'      => $total_contado - $efectivo_registrado,
-            'ventas_efectivo' => $efectivo_registrado
+            'diferencia'      => $diferencia
         ]
     ]);
 });

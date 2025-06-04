@@ -93,20 +93,41 @@ jQuery(document).ready(function ($) {
             });
         } else {
             const formData = $(this).serialize() + '&action=ajax_abrir_caja';
+
             $.post(ajaxurl, formData, function (res) {
                 if (res.success) {
                     mostrarTicketAperturaCaja(res.data.resumen, denominaciones, res.data.usuario);
                     verificarEstadoCaja();
                 } else {
-                    Swal.fire('Error', res.data?.message || 'No se pudo abrir la caja.', 'error');
+                    // Verificar si la caja abierta es de un día anterior
+                    if (res.data?.fecha_apertura && res.data?.caja_id) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Caja pendiente de cierre',
+                            html: `
+                                <p>Ya tienes una caja abierta desde el <strong>${res.data.fecha_apertura}</strong>.</p>
+                                <p>Debes cerrarla antes de abrir una nueva.</p>
+                                <a href="?page=gestion-cajas&caja_id=${res.data.caja_id}" class="text-blue-600 underline mt-2 inline-block">Ir a cerrar caja</a>
+                            `
+                        });
+                    } else {
+                        Swal.fire('Error', res.data?.message || 'No se pudo abrir la caja.', 'error');
+                    }
                 }
             });
         }
     });
 
+
     function mostrarTicketCierreCaja(resumen, denominaciones, usuario) {
+        console.log("✅ Mostrando ticket de cierre"); // Confirmación de que se ejecuta
+
         const denominacionesTexto = Object.entries(denominaciones).map(([denom, cantidad]) => {
-            return `<tr><td class="border px-2 py-1 text-right">$${denom}</td><td class="border px-2 py-1 text-center">${cantidad}</td><td class="border px-2 py-1 text-right">$${(denom * cantidad).toFixed(2)}</td></tr>`;
+            return `<tr>
+                        <td class="border px-2 py-1 text-right">$${denom}</td>
+                        <td class="border px-2 py-1 text-center">${cantidad}</td>
+                        <td class="border px-2 py-1 text-right">$${(denom * cantidad).toFixed(2)}</td>
+                    </tr>`;
         }).join('');
 
         const html = `
@@ -118,13 +139,23 @@ jQuery(document).ready(function ($) {
                 <p><strong>Cierre:</strong> ${resumen.fecha_cierre}</p>
                 <hr class="my-2" />
                 <p><strong>Monto Inicial:</strong> $${resumen.monto_inicial.toFixed(2)}</p>
-                <p><strong>Ventas en Efectivo:</strong> $${resumen.ventas_efectivo.toFixed(2)}</p>
+                <p><strong>Ventas en Efectivo:</strong> $${(resumen.ventas_efectivo || 0).toFixed(2)}</p>
                 <p><strong>Total Declarado:</strong> $${resumen.monto_cierre.toFixed(2)}</p>
-                <p><strong>Diferencia:</strong> <span class="${resumen.diferencia < 0 ? 'text-red-600' : 'text-green-600'}">$${resumen.diferencia.toFixed(2)}</span></p>
+                <p><strong>Diferencia:</strong> 
+                    <span class="${resumen.diferencia < 0 ? 'text-red-600' : 'text-green-600'}">
+                        $${resumen.diferencia.toFixed(2)}
+                    </span>
+                </p>
                 <hr class="my-2" />
                 <p class="font-bold">🧮 Desglose de Billetes:</p>
                 <table class="w-full mt-2 border text-xs">
-                    <thead><tr><th class="border px-2 py-1">Denom</th><th class="border px-2 py-1">Cantidad</th><th class="border px-2 py-1">Subtotal</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th class="border px-2 py-1">Denom</th>
+                            <th class="border px-2 py-1">Cantidad</th>
+                            <th class="border px-2 py-1">Subtotal</th>
+                        </tr>
+                    </thead>
                     <tbody>${denominacionesTexto}</tbody>
                 </table>
                 <div class="text-center mt-4 no-print">
@@ -135,19 +166,21 @@ jQuery(document).ready(function ($) {
             </div>
         `;
 
-        // Dentro de mostrarTicketCierreCaja()
         Swal.fire({
             title: 'Cierre de Caja Completado',
             html: html,
             width: 600,
             showConfirmButton: false,
             didOpen: () => {
-                document.getElementById('btnImprimirTicketCierreCaja')?.addEventListener('click', imprimirTicketCierreCaja);
+                const btn = document.getElementById('btnImprimirTicketCierreCaja');
+                if (btn) {
+                    btn.addEventListener('click', imprimirTicketCierreCaja);
+                } else {
+                    console.warn("⚠️ No se encontró el botón para imprimir el ticket.");
+                }
             }
         });
-
     }
-
 
     function mostrarTicketAperturaCaja(resumen, denominaciones, usuario) {
         const desglose = Object.entries(denominaciones).map(([denom, cantidad]) => {

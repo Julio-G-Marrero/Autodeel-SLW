@@ -936,7 +936,8 @@ jQuery(document).ready(function($) {
         // ✅ Validar si el usuario tiene caja abierta antes de continuar
         $.post(ajaxurl, { action: 'ajax_verificar_caja_abierta' }, function (resCaja) {
             if (!resCaja.success) {
-                Swal.fire('Caja cerrada', 'No puedes registrar una venta sin tener una caja abierta.', 'error');
+                const mensaje = resCaja.data?.mensaje || 'No puedes registrar una venta sin tener una caja abierta.';
+                Swal.fire('Caja no válida', mensaje, 'warning');
                 return;
             }
 
