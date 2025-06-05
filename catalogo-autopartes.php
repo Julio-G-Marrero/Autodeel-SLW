@@ -601,6 +601,13 @@ function ajax_registrar_venta_autopartes() {
         exit;
     }
 
+    $activo = get_user_meta($cliente_id, 'cliente_activo', true);
+    if ($activo !== '1') {
+        error_log("❌ Cliente ID $cliente_id está desactivado. Venta cancelada.");
+        wp_send_json_error(['message' => 'Este cliente está desactivado. No se puede registrar la venta.']);
+        exit;
+    }
+
     error_log("🧪 Cliente ID: $cliente_id | Productos: " . count($productos));
 
     $total = array_reduce($productos, function($carry, $p) {
@@ -3094,12 +3101,17 @@ add_action('wp_ajax_ajax_detalles_rembolso', function () {
 add_action('wp_ajax_ajax_guardar_resolucion_rembolso', function () {
     global $wpdb;
 
+    error_log("🔄 Iniciando procesamiento de resolución de reembolso...");
+
     $id = intval($_POST['id'] ?? 0);
     $observaciones = sanitize_text_field($_POST['observaciones'] ?? '');
     $accion_credito = sanitize_text_field($_POST['accion_credito'] ?? '');
     $usuario_id = get_current_user_id();
 
+    error_log("📥 Datos recibidos: id=$id, observaciones=$observaciones, accion_credito=$accion_credito, usuario_id=$usuario_id");
+
     if (!$id || !$usuario_id) {
+        error_log("❌ Datos incompletos en solicitud.");
         wp_send_json_error(['message' => 'Datos incompletos.']);
     }
 
@@ -3108,72 +3120,57 @@ add_action('wp_ajax_ajax_guardar_resolucion_rembolso', function () {
     ));
 
     if (!$rembolso) {
+        error_log("❌ Reembolso con ID $id no encontrado.");
         wp_send_json_error(['message' => 'Reembolso no encontrado.']);
     }
 
     if ($rembolso->estado === 'resuelto') {
+        error_log("⚠️ Reembolso ID $id ya había sido resuelto previamente.");
         wp_send_json_error(['message' => 'Este reembolso ya ha sido procesado.']);
     }
 
-    $monto = floatval($rembolso->monto);
-    $es_credito = $rembolso->metodo_pago === 'credito_cliente';
-    $cuenta_id = null;
+    $es_credito = in_array($rembolso->metodo_pago, ['credito', 'credito_cliente']);
+    error_log("🔍 Método de pago: {$rembolso->metodo_pago} - ¿Es crédito?: " . ($es_credito ? 'Sí' : 'No'));
 
     if ($es_credito) {
-        $cuenta_id = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$wpdb->prefix}cuentas_cobrar WHERE order_id = %d OR venta_id = %d LIMIT 1",
-            $rembolso->order_id,
-            $rembolso->venta_id
-        ));
+        $cuenta_id = null;
+        $venta_id = intval($rembolso->venta_id);
+        $order_id = intval($rembolso->order_id);
 
-        if (!$cuenta_id) {
-            wp_send_json_error(['message' => 'No se encontró la cuenta por cobrar asociada.']);
+        error_log("🔗 Buscando cuenta por cobrar - venta_id=$venta_id, order_id=$order_id");
+
+        if ($venta_id > 0) {
+            $cuenta_id = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}cuentas_cobrar WHERE venta_id = %d LIMIT 1",
+                $venta_id
+            ));
+            error_log("🔎 Resultado búsqueda por venta_id: " . ($cuenta_id ?: 'no encontrado'));
         }
 
-        // Validar que no se pague de más
-        $saldo_pendiente_actual = floatval($wpdb->get_var($wpdb->prepare(
-            "SELECT saldo_pendiente FROM {$wpdb->prefix}cuentas_cobrar WHERE id = %d",
-            $cuenta_id
-        )));
-
-        if ($monto > $saldo_pendiente_actual) {
-            wp_send_json_error(['message' => 'El monto del reembolso excede el saldo pendiente de la cuenta por cobrar.']);
+        if (!$cuenta_id && $order_id > 0) {
+            $cuenta_id = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}cuentas_cobrar WHERE order_id = %d LIMIT 1",
+                $order_id
+            ));
+            error_log("🔎 Resultado búsqueda por order_id: " . ($cuenta_id ?: 'no encontrado'));
         }
 
-        // Insertar el pago
-        $wpdb->insert("{$wpdb->prefix}pagos_cxc", [
-            'cuenta_id'      => $cuenta_id,
-            'monto_pagado'   => $monto,
-            'fecha_pago'     => current_time('mysql'),
-            'tipo'           => ($accion_credito === 'liquidar') ? 'reembolso_total' : 'reembolso',
-            'registrado_por' => $usuario_id,
-            'notas'          => 'Pago automático desde módulo de reembolsos'
-        ]);
+        if ($cuenta_id && $accion_credito === 'anular') {
+            error_log("🗑 Intentando eliminar cuenta por cobrar con ID: $cuenta_id...");
+            $eliminado = $wpdb->delete("{$wpdb->prefix}cuentas_cobrar", ['id' => $cuenta_id]);
+            if ($eliminado === false) {
+                error_log("❌ Error al eliminar cuenta por cobrar con ID $cuenta_id.");
+            } elseif ($eliminado === 0) {
+                error_log("⚠️ No se eliminó ninguna fila. ID $cuenta_id puede no existir o ya fue eliminada.");
+            } else {
+                error_log("✅ Cuenta por cobrar eliminada correctamente. ID: $cuenta_id");
+            }
+        } else {
+            error_log("🚫 No se intentó eliminar. cuenta_id=$cuenta_id, accion_credito=$accion_credito");
+        }
 
-        // Recalcular el estado de la cuenta
-        $pagado_actual = floatval($wpdb->get_var($wpdb->prepare(
-            "SELECT SUM(monto_pagado) FROM {$wpdb->prefix}pagos_cxc WHERE cuenta_id = %d",
-            $cuenta_id
-        )));
-
-        $monto_total = floatval($wpdb->get_var($wpdb->prepare(
-            "SELECT monto_total FROM {$wpdb->prefix}cuentas_cobrar WHERE id = %d",
-            $cuenta_id
-        )));
-
-        $saldo_pendiente = max(0, $monto_total - $pagado_actual);
-        $estado = ($saldo_pendiente <= 0) ? 'pagado' : 'pendiente';
-
-        $wpdb->update("{$wpdb->prefix}cuentas_cobrar", [
-            'monto_pagado'    => $pagado_actual,
-            'saldo_pendiente' => $saldo_pendiente,
-            'estado'          => $estado
-        ], ['id' => $cuenta_id]);
-    }
-
-    // Métodos externos (efectivo/tarjeta/etc)
-    else {
-        $comprobante_id = null;
+    } else {
+        error_log("💳 Pago no fue a crédito, procesando subida de comprobante...");
 
         if (!empty($_FILES['comprobante']['name'])) {
             require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -3181,14 +3178,19 @@ add_action('wp_ajax_ajax_guardar_resolucion_rembolso', function () {
             require_once ABSPATH . 'wp-admin/includes/image.php';
 
             $comprobante_id = media_handle_upload('comprobante', 0);
-        }
-
-        if (!is_wp_error($comprobante_id) && $comprobante_id) {
-            update_post_meta($id, 'comprobante_id', $comprobante_id);
+            if (!is_wp_error($comprobante_id)) {
+                update_post_meta($id, 'comprobante_id', $comprobante_id);
+                error_log("🧾 Comprobante subido con ID: $comprobante_id");
+            } else {
+                error_log("❌ Error al subir comprobante: " . $comprobante_id->get_error_message());
+            }
+        } else {
+            error_log("⚠️ No se recibió archivo de comprobante.");
         }
     }
 
     // Marcar el reembolso como resuelto
+    error_log("✅ Marcando reembolso ID $id como resuelto.");
     $wpdb->update("{$wpdb->prefix}solicitudes_rembolso", [
         'estado'         => 'resuelto',
         'observaciones'  => $observaciones,
@@ -3198,6 +3200,7 @@ add_action('wp_ajax_ajax_guardar_resolucion_rembolso', function () {
 
     wp_send_json_success(['message' => '✅ Reembolso resuelto correctamente.']);
 });
+
 
 add_action('wp_ajax_ajax_guardar_resolucion_devolucion', function () {
     global $wpdb;
@@ -3641,14 +3644,27 @@ add_action('wp_ajax_ajax_obtener_cliente', function () {
 
     $data = [
         'id' => $id,
+        'correo' => $user->user_email,
         'nombre' => get_user_meta($id, 'nombre_completo', true),
+        'telefono' => get_user_meta($id, 'telefono', true),
         'tipo_cliente' => get_user_meta($id, 'tipo_cliente', true),
         'estado_credito' => get_user_meta($id, 'estado_credito', true),
         'credito_disponible' => get_user_meta($id, 'credito_disponible', true),
         'dias_credito' => get_user_meta($id, 'dias_credito', true),
         'canal_venta' => get_user_meta($id, 'canal_venta', true),
         'oc_obligatoria' => get_user_meta($id, 'oc_obligatoria', true),
-        'rol_slug' => $user->roles[0] ?? 'customer', // 👈 agregado para mostrar rol actual
+        'cliente_activo' => get_user_meta($id, 'cliente_activo', true),
+        'rfc' => get_user_meta($id, 'rfc', true),
+        'razon_social' => get_user_meta($id, 'razon_social', true),
+        'uso_cfdi' => get_user_meta($id, 'uso_cfdi', true),
+        'regimen_fiscal' => get_user_meta($id, 'regimen_fiscal', true),
+        'fact_calle' => get_user_meta($id, 'fact_calle', true),
+        'fact_colonia' => get_user_meta($id, 'fact_colonia', true),
+        'fact_municipio' => get_user_meta($id, 'fact_municipio', true),
+        'fact_estado' => get_user_meta($id, 'fact_estado', true),
+        'fact_cp' => get_user_meta($id, 'fact_cp', true),
+        'fact_pais' => get_user_meta($id, 'fact_pais', true),
+        'rol_slug' => $user->roles[0] ?? 'customer',
     ];
 
     wp_send_json_success($data);
@@ -3669,6 +3685,7 @@ add_action('wp_ajax_ajax_actualizar_cliente', function () {
     update_user_meta($id, 'dias_credito', intval($_POST['dias'] ?? 0));
     update_user_meta($id, 'canal_venta', sanitize_text_field($_POST['canal'] ?? ''));
     update_user_meta($id, 'oc_obligatoria', intval($_POST['oc'] ?? 0));
+    update_user_meta($id, 'cliente_activo', sanitize_text_field($_POST['activo'] ?? '0'));
 
     // Cambiar rol si se proporcionó uno válido y no es 'administrator'
     if (!empty($_POST['rol']) && $_POST['rol'] !== 'administrator') {
@@ -4590,6 +4607,12 @@ add_action('wp_ajax_ajax_solicitar_negociacion_precio', function () {
 
     $usuario_id = get_current_user_id();
     $cliente_id = intval($_POST['cliente_id']);
+    $activo = get_user_meta($cliente_id, 'cliente_activo', true);
+    if ($activo !== '1') {
+        error_log("❌ Cliente desactivado. ID: $cliente_id");
+        wp_send_json_error(['message' => 'Este cliente está desactivado y no puede realizar ventas.']);
+        exit;
+    }
     $sku = sanitize_text_field($_POST['sku']);
     $nombre = sanitize_text_field($_POST['nombre']);
     $precio_actual = floatval($_POST['precio_actual']);

@@ -160,20 +160,23 @@ jQuery(document).ready(function($) {
                     <p><strong>Tipo de cliente:</strong> ${r.tipo_cliente}</p>
             `;
 
-            if (r.metodo_pago === 'credito_cliente') {
+            if (r.metodo_pago === 'credito' || r.metodo_pago === 'credito_cliente') {
                 if (!r.cuenta_id) {
                     Swal.fire('⚠️ Cuenta no encontrada', 'No se encontró una cuenta por cobrar asociada al pedido o venta.', 'warning');
                     return;
                 }
 
-                html += `
-                    <p><strong>Monto pendiente en cuenta:</strong> $${parseFloat(r.monto_pendiente || 0).toFixed(2)}</p>
-                    <label class="block mt-2 mb-1">Acción:</label>
-                    <div class="flex items-center space-x-2 mt-3">
-                        <input type="checkbox" id="liquidar_cuenta" class="h-4 w-4 text-green-600">
-                        <label for="liquidar_cuenta" class="text-sm">Liquidar cuenta</label>
-                    </div>
-                `;
+                if (r.estado === 'anulada') {
+                    html += `<p class="text-red-600 mt-2"><strong>Esta cuenta por cobrar ha sido anulada.</strong></p>`;
+                } else {
+                    html += `
+                        <p><strong>Monto pendiente en cuenta:</strong> $${parseFloat(r.monto_pendiente || 0).toFixed(2)}</p>
+                        <label class="block mt-2 mb-1">Acción:</label>
+                        <select id="accion_credito" class="swal2-select w-full mt-1 m-0">
+                            <option value="anular">Anular cuenta</option>
+                        </select>
+                    `;
+                }
             } else {
                 html += `
                     <label class="block mt-2 mb-1">Comprobante de reembolso (PDF o imagen):</label>
@@ -183,7 +186,7 @@ jQuery(document).ready(function($) {
 
             html += `
                 <label class="block mt-3 mb-1">Observaciones:</label>
-                <textarea id="observaciones_rembolso" class="swal2-textarea w-full text-sm" placeholder="Detalles u observaciones..."></textarea>
+                <textarea id="observaciones_rembolso" class="swal2-textarea w-full text-sm m-0" placeholder="Detalles u observaciones..."></textarea>
                 </div>
             `;
 
@@ -195,65 +198,64 @@ jQuery(document).ready(function($) {
                 confirmButtonText: 'Guardar resolución',
                 cancelButtonText: 'Cancelar',
                 focusConfirm: false,
-                preConfirm: () => {
-                    const observaciones = $('#observaciones_rembolso').val().trim();
+            preConfirm: () => {
+                const observaciones = $('#observaciones_rembolso').val().trim();
+                const accionCredito = $('#accion_credito').val() || '';
 
-                    // Flujo para crédito
-                    if (r.metodo_pago === 'credito_cliente') {
-                        Swal.close();
+                // Flujo para crédito
+                if (r.metodo_pago === 'credito' || r.metodo_pago === 'credito_cliente') {
+                    Swal.close();
 
-                        setTimeout(() => {
-                            if (!r.cuenta_id) {
-                                Swal.fire('Error', 'No se encontró la cuenta por cobrar asociada.', 'error');
-                                return;
+                    setTimeout(() => {
+                        if (!r.cuenta_id) {
+                            Swal.fire('Error', 'No se encontró la cuenta por cobrar asociada.', 'error');
+                            return;
+                        }
+
+                        $.post(ajaxurl, {
+                            action: 'ajax_guardar_resolucion_rembolso',
+                            id: r.id,
+                            observaciones,
+                            accion_credito: accionCredito
+                        }, function (resp) {
+                            if (resp.success) {
+                                Swal.fire('Reembolso gestionado', 'La cuenta fue actualizada y el reembolso registrado.', 'success')
+                                    .then(() => location.reload());
+                            } else {
+                                Swal.fire('Error', resp.data?.message || 'No se pudo actualizar el reembolso.', 'error');
                             }
+                        });
+                    }, 300);
 
-                            const accion = $('#accion_credito').val() || 'liquidar';
-
-                            $.post(ajaxurl, {
-                                action: 'ajax_guardar_resolucion_rembolso',
-                                id: r.id,
-                                observaciones: 'Pago automático desde módulo de reembolsos',
-                                accion_credito: accion
-                            }, function (resp) {
-                                if (resp.success) {
-                                    Swal.fire('✅ Reembolso gestionado', 'La cuenta fue actualizada y el reembolso registrado.', 'success')
-                                        .then(() => location.reload());
-                                } else {
-                                    Swal.fire('Error', resp.data?.message || 'No se pudo actualizar el reembolso.', 'error');
-                                }
-                            });
-                        }, 300);
-
-                        return false;
-                    }
-
-                    // Flujo para efectivo/tarjeta/transferencia
-                    const file = $('#comprobante_reembolso')[0]?.files?.[0];
-                    if (!file) {
-                        Swal.showValidationMessage('Debes subir un comprobante.');
-                        return false;
-                    }
-
-                    const data = new FormData();
-                    data.append('action', 'ajax_guardar_resolucion_rembolso');
-                    data.append('id', r.id);
-                    data.append('observaciones', observaciones);
-                    data.append('comprobante', file);
-
-                    return fetch(ajaxurl, {
-                        method: 'POST',
-                        body: data
-                    })
-                    .then(res => res.json())
-                    .then(json => {
-                        if (!json.success) throw new Error(json.data?.message || 'No se pudo guardar.');
-                        return json;
-                    })
-                    .catch(err => {
-                        Swal.showValidationMessage(err.message);
-                    });
+                    return false;
                 }
+
+                // Flujo para efectivo/tarjeta/transferencia
+                const file = $('#comprobante_reembolso')[0]?.files?.[0];
+                if (!file) {
+                    Swal.showValidationMessage('Debes subir un comprobante.');
+                    return false;
+                }
+
+                const data = new FormData();
+                data.append('action', 'ajax_guardar_resolucion_rembolso');
+                data.append('id', r.id);
+                data.append('observaciones', observaciones);
+                data.append('comprobante', file);
+
+                return fetch(ajaxurl, {
+                    method: 'POST',
+                    body: data
+                })
+                .then(res => res.json())
+                .then(json => {
+                    if (!json.success) throw new Error(json.data?.message || 'No se pudo guardar.');
+                    return json;
+                })
+                .catch(err => {
+                    Swal.showValidationMessage(err.message);
+                });
+            }
             }).then(result => {
                 if (result.isConfirmed) {
                     Swal.fire('✅ Reembolso gestionado', 'La resolución ha sido registrada.', 'success')

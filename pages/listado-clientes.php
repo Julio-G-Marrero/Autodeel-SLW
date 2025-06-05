@@ -126,6 +126,13 @@ wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', 
                 <span class="font-medium">¿Desea agregar datos de facturación?</span>
             </label>
         </div>
+        
+        <div class="col-span-2">
+            <label class="inline-flex items-center">
+                <input type="checkbox" id="edit_cliente_activo" class="mr-2">
+                <span class="font-medium">¿Cliente Activo?</span>
+            </label>
+        </div>
 
         <div id="edit_camposFacturacion" class="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 hidden">
             <div>
@@ -289,6 +296,7 @@ jQuery(document).ready(function($) {
                         $('#edit_fact_estado').val(c.fact_estado);
                         $('#edit_fact_cp').val(c.fact_cp);
                         $('#edit_fact_pais').val(c.fact_pais || 'México');
+                        $('#edit_cliente_activo').prop('checked', c.cliente_activo === '1' || typeof c.cliente_activo === 'undefined');
 
                         // Mostrar campos de crédito si aplica
                         if (parseFloat(c.credito_disponible) > 0 || c.estado_credito === 'activo') {
@@ -333,7 +341,8 @@ jQuery(document).ready(function($) {
                             fact_municipio: $('#edit_fact_municipio').val(),
                             fact_estado: $('#edit_fact_estado').val(),
                             fact_cp: $('#edit_fact_cp').val(),
-                            fact_pais: $('#edit_fact_pais').val()
+                            fact_pais: $('#edit_fact_pais').val(),
+                            activo: $('#edit_cliente_activo').is(':checked') ? '1' : '0',
                         };
                     }
                 }).then(result => {

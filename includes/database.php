@@ -112,7 +112,7 @@ $sql_cxc = "CREATE TABLE {$wpdb->prefix}cuentas_cobrar (
     monto_pagado DECIMAL(10,2) DEFAULT 0,
     saldo_pendiente DECIMAL(10,2) NOT NULL,
     fecha_limite_pago DATE NOT NULL,
-    estado ENUM('pendiente', 'pagado', 'vencido', 'bloqueado') DEFAULT 'pendiente',
+    estado ENUM('pendiente', 'pagado', 'vencido', 'bloqueado', 'anulada') DEFAULT 'pendiente',
     fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
     orden_compra_url TEXT DEFAULT NULL,
     PRIMARY KEY (id),
